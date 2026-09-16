@@ -1,0 +1,130 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1320" height="560" viewBox="0 0 1320 560" font-family="Segoe UI, Arial, sans-serif" font-size="13">
+  <style>
+    .box { fill: #f4f6f8; stroke: #333; stroke-width: 1.5; rx: 6; }
+    .board { fill: #1f2a30; stroke: #333; stroke-width: 1.5; rx: 4; }
+    .title { font-size: 15px; font-weight: bold; fill: #222; }
+    .pin { font-size: 12px; fill: #222; }
+    .bpin { font-size: 11px; fill: #fff; }
+    .note { font-size: 12px; fill: #555; }
+    .plus { stroke: #d62828; stroke-width: 3; fill: none; }
+    .gnd { stroke: #222; stroke-width: 3; fill: none; }
+    .sense { stroke: #f77f00; stroke-width: 2.5; fill: none; }
+    .res { fill: #fff; stroke: #333; stroke-width: 1.5; }
+    .dot { fill: #222; }
+    .pad { fill: #d4af37; stroke: #333; stroke-width: 0.8; }
+  </style>
+
+  <text x="20" y="28" font-size="18" font-weight="bold" fill="#222">Питание посоха: аккумулятор → TP4056 → тумблер → MT3608 → 5 В (задача 10)</text>
+
+  <!-- Аккумулятор -->
+  <rect class="box" x="20" y="120" width="190" height="100"/>
+  <text class="title" x="30" y="145">Аккумулятор 18650</text>
+  <text class="note" x="30" y="165">3,7 В, 4000 мА·ч</text>
+  <text class="note" x="30" y="182">плата защиты BMS</text>
+  <text class="note" x="30" y="199">разъём XH2.54</text>
+  <circle class="dot" cx="210" cy="150" r="4"/><text class="pin" x="190" y="146">+</text>
+  <circle class="dot" cx="210" cy="200" r="4"/><text class="pin" x="190" y="196">−</text>
+  <text class="note" x="60" y="240">3,0–4,2 В</text>
+
+  <!-- TP4056 -->
+  <rect class="box" x="280" y="110" width="190" height="140"/>
+  <text class="title" x="290" y="135">TP4056 + защита</text>
+  <text class="note" x="290" y="152">зарядка через USB-C</text>
+  <circle class="dot" cx="280" cy="170" r="4"/><text class="pin" x="290" y="174">B+</text>
+  <circle class="dot" cx="280" cy="230" r="4"/><text class="pin" x="290" y="234">B−</text>
+  <circle class="dot" cx="470" cy="170" r="4"/><text class="pin" x="425" y="174">OUT+</text>
+  <circle class="dot" cx="470" cy="230" r="4"/><text class="pin" x="425" y="234">OUT−</text>
+  <polyline class="gnd" points="375,320 375,255" stroke-width="2" stroke-dasharray="6 4"/>
+  <polygon points="369,262 381,262 375,250" fill="#222"/>
+  <text class="note" x="300" y="342">USB-C: зарядка от телефонного блока</text>
+  <text class="note" x="300" y="358">работает и при выключенном тумблере</text>
+
+  <!-- Тумблер -->
+  <rect class="box" x="550" y="140" width="130" height="60"/>
+  <text class="title" x="575" y="165">Тумблер</text>
+  <text class="note" x="560" y="185">средняя + крайняя ножки</text>
+  <circle class="dot" cx="550" cy="170" r="4"/>
+  <circle class="dot" cx="680" cy="170" r="4"/>
+  <text class="note" x="495" y="120">до 1,3 А при вспышке</text>
+
+  <!-- MT3608 -->
+  <rect class="box" x="750" y="110" width="170" height="140"/>
+  <text class="title" x="760" y="135">MT3608</text>
+  <text class="note" x="760" y="152">повышающий, выставить 5,0 В</text>
+  <circle class="dot" cx="750" cy="170" r="4"/><text class="pin" x="760" y="174">IN+</text>
+  <circle class="dot" cx="750" cy="230" r="4"/><text class="pin" x="760" y="234">IN−</text>
+  <circle class="dot" cx="920" cy="170" r="4"/><text class="pin" x="872" y="174">OUT+</text>
+  <circle class="dot" cx="920" cy="230" r="4"/><text class="pin" x="872" y="234">OUT−</text>
+  <text class="note" x="760" y="275">настраивать без нагрузки,</text>
+  <text class="note" x="760" y="291">потом винт залить лаком</text>
+
+  <!-- ESP32-C3 SuperMini: вид снизу, со стороны подписей -->
+  <rect x="1035" y="62" width="50" height="16" fill="#888" stroke="#333" rx="3"/>
+  <text class="note" x="1092" y="75">USB-C</text>
+  <rect class="board" x="1000" y="78" width="160" height="300"/>
+  <text x="1080" y="96" text-anchor="middle" font-size="12" font-weight="bold" fill="#fff">ESP32-C3 SuperMini</text>
+  <!-- левый ряд -->
+  <g>
+    <rect class="pad" x="996" y="112" width="8" height="8"/><text class="bpin" x="1010" y="120">5V</text>
+    <rect class="pad" x="996" y="144" width="8" height="8"/><text class="bpin" x="1010" y="152">G</text>
+    <rect class="pad" x="996" y="176" width="8" height="8"/><text class="bpin" x="1010" y="184">3.3</text>
+    <rect class="pad" x="996" y="208" width="8" height="8"/><text class="bpin" x="1010" y="216">4</text>
+    <rect class="pad" x="996" y="240" width="8" height="8"/><text class="bpin" x="1010" y="248">3</text>
+    <rect class="pad" x="996" y="272" width="8" height="8"/><text class="bpin" x="1010" y="280">2</text>
+    <rect class="pad" x="996" y="304" width="8" height="8"/><text class="bpin" x="1010" y="312">1</text>
+    <rect class="pad" x="996" y="336" width="8" height="8"/><text class="bpin" x="1010" y="344">0</text>
+  </g>
+  <!-- правый ряд -->
+  <g text-anchor="end">
+    <rect class="pad" x="1156" y="112" width="8" height="8"/><text class="bpin" x="1150" y="120">5</text>
+    <rect class="pad" x="1156" y="144" width="8" height="8"/><text class="bpin" x="1150" y="152">6</text>
+    <rect class="pad" x="1156" y="176" width="8" height="8"/><text class="bpin" x="1150" y="184">7</text>
+    <rect class="pad" x="1156" y="208" width="8" height="8"/><text class="bpin" x="1150" y="216">8</text>
+    <rect class="pad" x="1156" y="240" width="8" height="8"/><text class="bpin" x="1150" y="248">9</text>
+    <rect class="pad" x="1156" y="272" width="8" height="8"/><text class="bpin" x="1150" y="280">10</text>
+    <rect class="pad" x="1156" y="304" width="8" height="8"/><text class="bpin" x="1150" y="312">20</text>
+    <rect class="pad" x="1156" y="336" width="8" height="8"/><text class="bpin" x="1150" y="344">21</text>
+  </g>
+  <text class="note" x="1000" y="392">вид снизу, со стороны подписей</text>
+  <text class="note" x="640" y="470">на макетке плата чипом вверх: USB вверх, ряд 5V справа</text>
+
+  <!-- Плюсовые провода -->
+  <polyline class="plus" points="210,150 245,150 245,170 280,170"/>
+  <polyline class="plus" points="470,170 550,170"/>
+  <polyline class="plus" points="680,170 750,170"/>
+  <polyline class="plus" points="920,170 960,170 960,116 996,116"/>
+  <text class="note" x="870" y="105" fill="#d62828">5 В → ножка 5V</text>
+
+  <!-- Минус аккумулятора: только к B−, НЕ к общей земле -->
+  <polyline class="gnd" points="210,200 245,200 245,230 280,230"/>
+  <text class="note" x="215" y="262">B− только к аккумулятору,</text>
+  <text class="note" x="215" y="278">к общей земле не тянуть</text>
+
+  <!-- Общая земля -->
+  <polyline class="gnd" points="470,230 750,230"/>
+  <polyline class="gnd" points="610,230 610,490"/>
+  <polyline class="gnd" points="920,230 940,230 940,490"/>
+  <polyline class="gnd" points="996,148 978,148 978,490"/>
+  <polyline class="gnd" points="610,490 1240,490"/>
+  <text class="note" x="640" y="510">общая земля GND: OUT− TP4056 = IN−/OUT− MT3608 = ножка G платы = низ делителя</text>
+
+  <!-- Делитель заряда -->
+  <polyline class="sense" points="280,170 262,170 262,50 1240,50 1240,330"/>
+  <text class="note" x="600" y="42" fill="#f77f00">второй тонкий провод от B+: замер заряда (до тумблера)</text>
+  <rect class="res" x="1230" y="330" width="20" height="50"/>
+  <text class="pin" x="1256" y="360">100 кОм</text>
+  <polyline class="sense" points="1240,380 1240,405"/>
+  <circle class="dot" cx="1240" cy="405" r="4"/>
+  <polyline class="sense" points="996,244 988,244 988,405 1240,405"/>
+  <text class="note" x="1060" y="424" fill="#f77f00">на ножке 3: 1,6–2,1 В</text>
+  <rect class="res" x="1230" y="415" width="20" height="50"/>
+  <text class="pin" x="1256" y="445">100 кОм</text>
+  <polyline class="gnd" points="1240,465 1240,490"/>
+
+  <!-- Легенда -->
+  <line x1="20" y1="420" x2="60" y2="420" class="plus"/><text class="note" x="68" y="424">плюс</text>
+  <line x1="20" y1="445" x2="60" y2="445" class="gnd"/><text class="note" x="68" y="449">земля</text>
+  <line x1="20" y1="470" x2="60" y2="470" class="sense"/><text class="note" x="68" y="474">замер заряда, ток 20 мкА</text>
+  <text class="note" x="20" y="530" font-weight="bold">При заливке прошивки по USB тумблер выключен: у SuperMini ножка 5V соединена с USB напрямую.</text>
+  <text class="note" x="20" y="548">Ножка 3.3 это выход стабилизатора платы, на неё ничего не подавать.</text>
+</svg>
