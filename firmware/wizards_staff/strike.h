@@ -14,6 +14,11 @@ int           strikeLastLevel = 0;   // уровень выхода датчик
 unsigned long strikeWindowAt  = 0;   // когда открылось текущее окно, 0 если окна нет
 int           strikeEdges     = 0;   // переключений в текущем окне
 
+// Итог последнего закрытого окна. Нужен главному скетчу, чтобы рассказать о нём телефону:
+// по этим числам видно, какие толчки датчик считает ударом, а какие отбрасывает.
+int  strikeLastEdges    = 0;         // сколько переключений было в последнем окне
+bool strikeWindowClosed = false;     // окно только что закрылось, итог ещё не прочитан
+
 void strikeBegin() {
   pinMode(PIN_STRIKE, INPUT);
   strikeLastLevel = digitalRead(PIN_STRIKE);
@@ -45,6 +50,8 @@ bool strikeDetected() {
   strikeWindowAt = 0;
   strikeEdges = 0;
   bool isStrike = edges >= STRIKE_MIN_EDGES;
+  strikeLastEdges = edges;
+  strikeWindowClosed = true;
   Serial.printf("Датчик: %d переключений за %lu мс, %s\n", edges, STRIKE_WINDOW_MS,
                 isStrike ? "УДАР" : "не удар");
   return isStrike;

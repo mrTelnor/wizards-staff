@@ -18,9 +18,16 @@ NimBLECharacteristic* bleTx      = nullptr;
 NimBLECharacteristic* bleBattery = nullptr;
 bool     bleConnected    = false;
 uint16_t bleConnHandle   = 0;       // номер соединения, нужен, чтобы узнать размер пакета
-String   bleRxBuffer;               // накопленный текст команды
-bool     bleCommandReady = false;
+String   bleRxBuffer;               // накопленный текст команды, пока она не дописана до конца
 int      bleBraceDepth   = 0;       // сколько фигурных скобок JSON сейчас открыто
+
+// Очередь принятых команд. Телефон при подключении шлёт несколько команд подряд, и вторая
+// приходит раньше, чем главный цикл успевает разобрать первую. С одной ячейкой такие команды
+// терялись: на этом пропадала синхронизация часов.
+const int BLE_QUEUE_SIZE = 6;
+String    bleQueue[BLE_QUEUE_SIZE];
+int       bleQueueHead = 0;         // откуда читаем
+int       bleQueueTail = 0;         // куда пишем
 
 // Определяется в главном скетче: что делать с пришедшей командой.
 void bleOnCommand(JsonDocument& cmd);
@@ -34,10 +41,27 @@ class StaffServerCallbacks : public NimBLEServerCallbacks {
   }
   void onDisconnect(NimBLEServer* server, NimBLEConnInfo& info, int reason) override {
     bleConnected = false;
+    bleQueueHead = bleQueueTail;   // недоразобранные команды прошлого сеанса не нужны
+    bleRxBuffer = "";
+    bleBraceDepth = 0;
     Serial.printf("BLE: телефон отключился, причина %d\n", reason);
     NimBLEDevice::startAdvertising();
   }
 };
+
+// Складывает накопленную команду в очередь и освобождает буфер под следующую.
+void bleQueuePush() {
+  if (!bleRxBuffer.length()) return;
+  int next = (bleQueueTail + 1) % BLE_QUEUE_SIZE;
+  if (next == bleQueueHead) {
+    Serial.println("BLE: очередь команд переполнена, команда потеряна");
+  } else {
+    bleQueue[bleQueueTail] = bleRxBuffer;
+    bleQueueTail = next;
+  }
+  bleRxBuffer = "";
+  bleBraceDepth = 0;
+}
 
 // Телефон записал данные в RX: складываем в буфер. Команда закончена, когда пришёл перевод строки
 // или когда закрылась последняя фигурная скобка JSON: терминалы вроде BLE Scanner не умеют слать '\n'.
@@ -45,17 +69,13 @@ class StaffRxCallbacks : public NimBLECharacteristicCallbacks {
   void onWrite(NimBLECharacteristic* c, NimBLEConnInfo& info) override {
     std::string v = c->getValue();
     for (char ch : v) {
-      if (bleCommandReady) break;                       // предыдущую команду ещё не разобрали
       if (ch == '\n' || ch == '\r') {
-        if (bleRxBuffer.length()) bleCommandReady = true;
+        bleQueuePush();
         continue;
       }
       if (bleRxBuffer.length() < 512) bleRxBuffer += ch;
       if (ch == '{') bleBraceDepth++;
-      if (ch == '}' && --bleBraceDepth <= 0) {
-        bleBraceDepth = 0;
-        bleCommandReady = true;
-      }
+      if (ch == '}' && --bleBraceDepth <= 0) bleQueuePush();
     }
   }
 };
@@ -128,6 +148,15 @@ void bleSendBattery(int mv, int pct) {
   bleSend(doc);
 }
 
+// Строка для журнала телефона: то же, что посох печатает в монитор порта.
+// Так ложные срабатывания датчика и удары мимо взвода видно на планшете, без провода.
+void bleSendLog(const char* msg) {
+  JsonDocument doc;
+  doc["ev"]  = "log";
+  doc["msg"] = msg;
+  bleSend(doc);
+}
+
 // Короткий ответ об ошибке: телефон увидит, что команда не понята.
 void bleSendError(const char* msg) {
   JsonDocument doc;
@@ -136,14 +165,15 @@ void bleSendError(const char* msg) {
   bleSend(doc);
 }
 
-// Вызывать в каждом обороте loop(): если накопилась команда, разбираем и отдаём в bleOnCommand.
+// Вызывать в каждом обороте loop(): берёт из очереди одну команду, разбирает и отдаёт
+// в bleOnCommand. По одной за оборот: обороты идут каждые пару миллисекунд, очередь не копится.
 void bleLoop() {
-  if (!bleCommandReady) return;
+  if (bleQueueHead == bleQueueTail) return;
+  String line = bleQueue[bleQueueHead];
+  bleQueueHead = (bleQueueHead + 1) % BLE_QUEUE_SIZE;
+
   JsonDocument cmd;
-  DeserializationError err = deserializeJson(cmd, bleRxBuffer);
-  bleRxBuffer = "";
-  bleBraceDepth = 0;
-  bleCommandReady = false;
+  DeserializationError err = deserializeJson(cmd, line);
   if (err) {
     Serial.printf("BLE: не разобрал команду: %s\n", err.c_str());
     bleSendError("bad json");

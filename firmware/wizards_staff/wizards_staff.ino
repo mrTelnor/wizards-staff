@@ -71,6 +71,7 @@ void bleOnCommand(JsonDocument& cmd) {
     doc["ev"]   = "info";
     doc["fw"]   = FW_VERSION;
     doc["hist"] = HISTORY_SIZE;
+    doc["ts"]   = rtcEpoch();   // время посоха: приложение покажет его рядом со своим
     JsonArray dice = doc["dice"].to<JsonArray>();
     for (int i = 0; i < 8; i++) dice.add(DICE_SIDES[i]);
     bleSend(doc);
@@ -146,6 +147,17 @@ void loop() {
   // Датчик опрашиваем всегда, иначе фильтр не увидит начало пачки переключений.
   // Удар засчитываем, только если посох взведён и после прошлого броска прошло STRIKE_COOLDOWN_MS.
   bool strike = strikeDetected();
+
+  // Итог каждой пачки переключений отправляем телефону: в журнале приложения видно,
+  // что датчик вообще дёргался, и какие толчки он отбросил как слабые.
+  if (strikeWindowClosed) {
+    strikeWindowClosed = false;
+    char msg[80];
+    snprintf(msg, sizeof(msg), "Датчик: %d переключений за %lu мс, %s",
+             strikeLastEdges, STRIKE_WINDOW_MS, strike ? "УДАР" : "не удар");
+    bleSendLog(msg);
+  }
+
   if (strike && now - lastRollAt > STRIKE_COOLDOWN_MS) {
     if (armedCount) {
       Serial.println("Удар!");
@@ -154,13 +166,18 @@ void loop() {
       sendState();
     } else {
       Serial.println("Удар, но посох не взведён: броска нет");
+      bleSendLog("Удар, но посох не взведён: броска нет");
     }
+  } else if (strike) {
+    Serial.println("Удар, но ещё идёт пауза после прошлого броска");
+    bleSendLog("Удар в паузе после прошлого броска: не считаем");
   }
 
   // Взвод не вечный: посох, забытый взведённым, не должен бросать от случайного стука.
   if (armedCount && now - armedAt > ARM_TIMEOUT_MS) {
     armedCount = 0;
     Serial.println("Взвод снят: слишком долго ждали удара");
+    bleSendLog("Взвод снят: слишком долго ждали удара");
     sendState();
   }
 
