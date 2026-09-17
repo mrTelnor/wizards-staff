@@ -1,0 +1,153 @@
+#pragma once
+#include <NimBLEDevice.h>
+#include <ArduinoJson.h>
+#include "config.h"
+
+// Связь с телефоном по Bluetooth Low Energy (протокол: docs/ПЛАН-APP.md, раздел «Протокол»).
+// Сервис Nordic UART: характеристика RX принимает JSON-команды от телефона,
+// характеристика TX отдаёт JSON-события. Одно сообщение это одна строка, в конце '\n'.
+// Стандартный Battery Service дублирует процент заряда, чтобы его показывало меню Bluetooth телефона.
+
+static const char* BLE_DEVICE_NAME  = "WizardsStaff";
+static const char* NUS_SERVICE_UUID = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E";
+static const char* NUS_RX_UUID      = "6E400002-B5A3-F393-E0A9-E50E24DCCA9E";   // телефон → посох
+static const char* NUS_TX_UUID      = "6E400003-B5A3-F393-E0A9-E50E24DCCA9E";   // посох → телефон
+
+NimBLEServer*         bleServer  = nullptr;
+NimBLECharacteristic* bleTx      = nullptr;
+NimBLECharacteristic* bleBattery = nullptr;
+bool     bleConnected    = false;
+uint16_t bleConnHandle   = 0;       // номер соединения, нужен, чтобы узнать размер пакета
+String   bleRxBuffer;               // накопленный текст команды
+bool     bleCommandReady = false;
+int      bleBraceDepth   = 0;       // сколько фигурных скобок JSON сейчас открыто
+
+// Определяется в главном скетче: что делать с пришедшей командой.
+void bleOnCommand(JsonDocument& cmd);
+
+// Телефон подключился или отключился. После отключения снова становимся видимыми.
+class StaffServerCallbacks : public NimBLEServerCallbacks {
+  void onConnect(NimBLEServer* server, NimBLEConnInfo& info) override {
+    bleConnected  = true;
+    bleConnHandle = info.getConnHandle();
+    Serial.println("BLE: телефон подключился");
+  }
+  void onDisconnect(NimBLEServer* server, NimBLEConnInfo& info, int reason) override {
+    bleConnected = false;
+    Serial.printf("BLE: телефон отключился, причина %d\n", reason);
+    NimBLEDevice::startAdvertising();
+  }
+};
+
+// Телефон записал данные в RX: складываем в буфер. Команда закончена, когда пришёл перевод строки
+// или когда закрылась последняя фигурная скобка JSON: терминалы вроде BLE Scanner не умеют слать '\n'.
+class StaffRxCallbacks : public NimBLECharacteristicCallbacks {
+  void onWrite(NimBLECharacteristic* c, NimBLEConnInfo& info) override {
+    std::string v = c->getValue();
+    for (char ch : v) {
+      if (bleCommandReady) break;                       // предыдущую команду ещё не разобрали
+      if (ch == '\n' || ch == '\r') {
+        if (bleRxBuffer.length()) bleCommandReady = true;
+        continue;
+      }
+      if (bleRxBuffer.length() < 512) bleRxBuffer += ch;
+      if (ch == '{') bleBraceDepth++;
+      if (ch == '}' && --bleBraceDepth <= 0) {
+        bleBraceDepth = 0;
+        bleCommandReady = true;
+      }
+    }
+  }
+};
+
+// Запускает BLE: имя, сервисы, реклама. Вызывать один раз в setup().
+void bleBegin() {
+  NimBLEDevice::init(BLE_DEVICE_NAME);
+  NimBLEDevice::setPower(3);   // 3 дБм: посох рядом с телефоном, больше не нужно
+
+  bleServer = NimBLEDevice::createServer();
+  bleServer->setCallbacks(new StaffServerCallbacks());
+
+  NimBLEService* nus = bleServer->createService(NUS_SERVICE_UUID);
+  bleTx = nus->createCharacteristic(NUS_TX_UUID, NIMBLE_PROPERTY::NOTIFY);
+  NimBLECharacteristic* rx = nus->createCharacteristic(NUS_RX_UUID,
+      NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
+  rx->setCallbacks(new StaffRxCallbacks());
+
+  NimBLEService* bat = bleServer->createService(NimBLEUUID((uint16_t)0x180F));
+  bleBattery = bat->createCharacteristic(NimBLEUUID((uint16_t)0x2A19),
+      NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);
+
+  bleServer->start();   // в NimBLE 2.x сервисы стартуют вместе с сервером
+
+  // Рекламный пакет BLE это 31 байт. В него кладём флаги и имя: имя видит любой сканер.
+  // Длинный UUID сервиса UART уходит в ответ на сканирование, это второй пакет; Android
+  // склеивает оба, поэтому поиск посоха по UUID в приложении работает.
+  NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
+  NimBLEAdvertisementData advData;
+  advData.setFlags(BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP);
+  advData.setName(BLE_DEVICE_NAME);
+  adv->setAdvertisementData(advData);
+  NimBLEAdvertisementData scanData;
+  scanData.addServiceUUID(NimBLEUUID(NUS_SERVICE_UUID));
+  adv->setScanResponseData(scanData);
+  bool ok = adv->start();
+  Serial.printf("BLE: реклама %s, имя %s, адрес %s\n",
+                ok ? "запущена" : "НЕ ЗАПУСТИЛАСЬ", BLE_DEVICE_NAME,
+                NimBLEDevice::getAddress().toString().c_str());
+}
+
+// Отправляет JSON телефону одной строкой. Если телефон не подключён, молча пропускает.
+// BLE-пакет маленький, поэтому строка режется на куски по размеру согласованного пакета.
+void bleSend(const JsonDocument& doc) {
+  if (!bleConnected || !bleTx) return;
+  String line;
+  serializeJson(doc, line);
+  line += '\n';
+  size_t chunk = bleServer->getPeerMTU(bleConnHandle);
+  chunk = chunk > 23 ? chunk - 3 : 20;
+  for (size_t i = 0; i < line.length(); i += chunk) {
+    size_t len = min(chunk, line.length() - i);
+    bleTx->setValue((const uint8_t*)line.c_str() + i, len);
+    bleTx->notify();
+    delay(5);
+  }
+}
+
+// Заряд: и в JSON, и в стандартную характеристику Battery Level.
+void bleSendBattery(int mv, int pct) {
+  if (bleBattery) {
+    uint8_t level = (uint8_t)pct;
+    bleBattery->setValue(&level, 1);
+    if (bleConnected) bleBattery->notify();
+  }
+  JsonDocument doc;
+  doc["ev"]  = "bat";
+  doc["mv"]  = mv;
+  doc["pct"] = pct;
+  bleSend(doc);
+}
+
+// Короткий ответ об ошибке: телефон увидит, что команда не понята.
+void bleSendError(const char* msg) {
+  JsonDocument doc;
+  doc["ev"]  = "err";
+  doc["msg"] = msg;
+  bleSend(doc);
+}
+
+// Вызывать в каждом обороте loop(): если накопилась команда, разбираем и отдаём в bleOnCommand.
+void bleLoop() {
+  if (!bleCommandReady) return;
+  JsonDocument cmd;
+  DeserializationError err = deserializeJson(cmd, bleRxBuffer);
+  bleRxBuffer = "";
+  bleBraceDepth = 0;
+  bleCommandReady = false;
+  if (err) {
+    Serial.printf("BLE: не разобрал команду: %s\n", err.c_str());
+    bleSendError("bad json");
+    return;
+  }
+  bleOnCommand(cmd);
+}

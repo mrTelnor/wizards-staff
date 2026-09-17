@@ -24,6 +24,8 @@
    - Adafruit NeoPixel
    - Adafruit PCF8574
    - RTClib
+   - NimBLE-Arduino (h2zero), связь с телефоном по Bluetooth, проверено на 2.5.1
+   - ArduinoJson (Benoit Blanchon), обмен сообщениями с телефоном, проверено на 7.4.3
 
 ## Настройки платы
 
@@ -31,7 +33,8 @@
 
 - Tools → Board → esp32 → **ESP32C3 Dev Module**
 - Tools → Port → появившийся COM-порт
-- Tools → **USB CDC On Boot → Enabled**, иначе Serial-монитор молчит
+- Tools → **USB CDC On Boot → Enabled**, иначе Serial-монитор молчит. Этот пункт слетает в Disabled при перевыборе платы или порта, проверять, если монитор пуст
+- Tools → **Partition Scheme → Minimal SPIFFS (1.9MB APP with OTA)/190KB SPIFFS**: прошивка с Bluetooth не помещается в стандартный раздел
 
 Если порт не появился: зажать на плате кнопку BOOT, не отпуская подключить USB, отпустить. Плата войдёт в режим загрузчика. После заливки нажать RESET.
 
