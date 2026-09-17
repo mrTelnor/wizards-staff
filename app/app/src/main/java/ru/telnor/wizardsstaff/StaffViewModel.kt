@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import ru.telnor.wizardsstaff.ble.Connection
 import ru.telnor.wizardsstaff.ble.FoundDevice
+import ru.telnor.wizardsstaff.ble.LogDirection
+import ru.telnor.wizardsstaff.ble.LogLine
 import ru.telnor.wizardsstaff.ble.StaffBle
 import ru.telnor.wizardsstaff.ble.StaffCommand
 import ru.telnor.wizardsstaff.ble.StaffEvent
@@ -23,7 +25,10 @@ import ru.telnor.wizardsstaff.ble.StaffEvent
 
 /** Один бросок в ленте. */
 data class RollRecord(
+    /** Номер броска в посохе. После перезагрузки посоха нумерация начинается заново. */
     val id: Long,
+    /** Номер сеанса связи: вместе с id даёт ключ, уникальный в пределах работы приложения. */
+    val session: Int,
     val count: Int,
     val sides: Int,
     val values: List<Int>,
@@ -32,6 +37,9 @@ data class RollRecord(
     val receivedAt: Long,
     val discarded: Boolean = false,
 ) {
+    /** Чем этот бросок отличается от всех прочих в ленте. */
+    val key: String get() = "$session-$id"
+
     /** Формула броска: 1d20, 3d6. */
     val formula: String get() = "${count}d$sides"
 
@@ -44,6 +52,9 @@ data class RollRecord(
     /** Критический провал — натуральная единица там же. */
     val critFail: Boolean get() = count == 1 && sides == 20 && values.firstOrNull() == 1
 }
+
+/** Сколько строк журнала держим в памяти: дальше старые вытесняются. */
+private const val MAX_LOG_LINES = 2000
 
 /** Взвод: какой бросок сделает следующий удар об пол. */
 data class ArmedState(val count: Int, val sides: Int) {
@@ -77,9 +88,39 @@ class StaffViewModel(application: Application) : AndroidViewModel(application) {
     private val _lastError = MutableStateFlow<String?>(null)
     val lastError: StateFlow<String?> = _lastError.asStateFlow()
 
+    private val _logLines = MutableStateFlow<List<LogLine>>(emptyList())
+    val logLines: StateFlow<List<LogLine>> = _logLines.asStateFlow()
+
+    /** На сколько секунд часы посоха расходятся с планшетом. null — пока не проверяли. */
+    private val _clockSkew = MutableStateFlow<Long?>(null)
+    val clockSkew: StateFlow<Long?> = _clockSkew.asStateFlow()
+
+    // Каждое новое подключение — новый сеанс. Посох после перезагрузки нумерует броски
+    // заново с единицы, и без этого счётчика свежий бросок №1 выглядел бы повтором старого
+    // и не попадал бы в ленту.
+    private var session = 0
+
     init {
         viewModelScope.launch {
             ble.events.collect { event -> onEvent(event) }
+        }
+        viewModelScope.launch {
+            var wasConnected = false
+            ble.connection.collect { state ->
+                val connected = state == Connection.Connected
+                if (connected && !wasConnected) session++
+                wasConnected = connected
+            }
+        }
+        viewModelScope.launch {
+            ble.log.collect { line ->
+                val lines = _logLines.value + line
+                _logLines.value = if (lines.size > MAX_LOG_LINES) {
+                    lines.takeLast(MAX_LOG_LINES)
+                } else {
+                    lines
+                }
+            }
         }
     }
 
@@ -88,14 +129,15 @@ class StaffViewModel(application: Application) : AndroidViewModel(application) {
             is StaffEvent.Roll -> {
                 val record = RollRecord(
                     id = event.id,
+                    session = session,
                     count = event.count,
                     sides = event.sides,
                     values = event.values,
                     total = event.total,
                     receivedAt = System.currentTimeMillis(),
                 )
-                // Посох может прислать бросок повторно при переподключении: по id отсеиваем дубли.
-                if (_rolls.value.none { it.id == record.id }) {
+                // Посох может прислать один бросок дважды: дубли отсеиваем в пределах сеанса.
+                if (_rolls.value.none { it.key == record.key }) {
                     _rolls.value = listOf(record) + _rolls.value
                 }
             }
@@ -105,12 +147,20 @@ class StaffViewModel(application: Application) : AndroidViewModel(application) {
             is StaffEvent.Info -> {
                 _firmware.value = event.firmware
                 if (event.dice.isNotEmpty()) _dice.value = event.dice
+                _clockSkew.value = if (event.staffTime > 0) {
+                    event.staffTime - System.currentTimeMillis() / 1000
+                } else {
+                    null   // часы посоха не выставлены, сравнивать не с чем
+                }
             }
 
             is StaffEvent.State ->
                 _armed.value = if (event.armed) ArmedState(event.count, event.sides) else null
 
             is StaffEvent.Error -> _lastError.value = event.message
+            // Строка монитора посоха и ответ «сделано» ничего не меняют:
+            // в журнале обмена они уже видны как есть.
+            is StaffEvent.Log -> Unit
             is StaffEvent.Ok -> Unit
         }
     }
@@ -130,6 +180,25 @@ class StaffViewModel(application: Application) : AndroidViewModel(application) {
         _batteryPercent.value = null
         _firmware.value = null
         _armed.value = null
+        _clockSkew.value = null
+    }
+
+    /** Отправляет посоху строку как есть: экран логов позволяет писать команды руками. */
+    fun sendRaw(text: String) {
+        val line = text.trim()
+        if (line.isEmpty()) return
+        ble.send(line)
+    }
+
+    /** Чистит журнал обмена. На посохе при этом ничего не меняется. */
+    fun clearLog() {
+        _logLines.value = emptyList()
+    }
+
+    /** Подводит часы посоха по планшету и сразу спрашивает, что из этого вышло. */
+    fun syncTime() {
+        ble.send(StaffCommand.time(System.currentTimeMillis() / 1000))
+        ble.send(StaffCommand.info())
     }
 
     // ---------- взвод ----------
@@ -143,8 +212,10 @@ class StaffViewModel(application: Application) : AndroidViewModel(application) {
     // ---------- лента ----------
 
     /** Отмечает бросок как случайный: он остаётся в ленте, но не считается. */
-    fun toggleDiscarded(id: Long) {
-        _rolls.value = _rolls.value.map { if (it.id == id) it.copy(discarded = !it.discarded) else it }
+    fun toggleDiscarded(key: String) {
+        _rolls.value = _rolls.value.map {
+            if (it.key == key) it.copy(discarded = !it.discarded) else it
+        }
     }
 
     fun clearError() { _lastError.value = null }

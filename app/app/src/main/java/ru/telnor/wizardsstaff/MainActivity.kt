@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import ru.telnor.wizardsstaff.ble.Connection
+import ru.telnor.wizardsstaff.ui.LogScreen
 import ru.telnor.wizardsstaff.ui.PermissionDialog
 import ru.telnor.wizardsstaff.ui.RollsScreen
 import ru.telnor.wizardsstaff.ui.StaffIcons
@@ -98,6 +99,7 @@ private fun AppFrame(viewModel: StaffViewModel = viewModel()) {
     val context = androidx.compose.ui.platform.LocalContext.current
 
     var section by remember { mutableStateOf(Section.Rolls) }
+    var showLogs by remember { mutableStateOf(false) }
     var showPermissionDialog by remember { mutableStateOf(false) }
     var showBluetoothOffDialog by remember { mutableStateOf(false) }
 
@@ -110,6 +112,8 @@ private fun AppFrame(viewModel: StaffViewModel = viewModel()) {
     val firmware by viewModel.firmware.collectAsState()
     val dice by viewModel.dice.collectAsState()
     val armed by viewModel.armed.collectAsState()
+    val clockSkew by viewModel.clockSkew.collectAsState()
+    val logLines by viewModel.logLines.collectAsState()
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -152,7 +156,10 @@ private fun AppFrame(viewModel: StaffViewModel = viewModel()) {
                 Section.entries.forEach { item ->
                     NavigationRailItem(
                         selected = section == item,
-                        onClick = { section = item },
+                        onClick = {
+                            section = item
+                            showLogs = false
+                        },
                         icon = {
                             Icon(item.icon, contentDescription = item.title, Modifier.size(22.dp))
                         },
@@ -171,14 +178,23 @@ private fun AppFrame(viewModel: StaffViewModel = viewModel()) {
             Column(Modifier.fillMaxSize()) {
                 TopBar(
                     section = section,
+                    logsOpen = showLogs,
                     rollCount = rolls.size,
                     connection = connection,
                     armedFormula = armed?.formula,
                 )
                 HorizontalDivider(color = scheme.outlineVariant)
 
-                when (section) {
-                    Section.Rolls -> RollsScreen(
+                when {
+                    showLogs -> LogScreen(
+                        lines = logLines,
+                        connected = connection == Connection.Connected,
+                        onBack = { showLogs = false },
+                        onSend = viewModel::sendRaw,
+                        onClear = viewModel::clearLog,
+                    )
+
+                    section == Section.Rolls -> RollsScreen(
                         rolls = rolls,
                         armed = armed,
                         dice = dice,
@@ -187,9 +203,10 @@ private fun AppFrame(viewModel: StaffViewModel = viewModel()) {
                         onArm = viewModel::arm,
                         onDisarm = viewModel::disarm,
                         onToggleDiscarded = viewModel::toggleDiscarded,
+                        onGoToStaff = { section = Section.Staff },
                     )
 
-                    Section.Staff -> StaffScreen(
+                    section == Section.Staff -> StaffScreen(
                         connection = connection,
                         devices = devices,
                         scanFinished = scanFinished,
@@ -197,20 +214,23 @@ private fun AppFrame(viewModel: StaffViewModel = viewModel()) {
                         batteryPercent = battery,
                         firmware = firmware,
                         armed = armed,
+                        clockSkew = clockSkew,
                         onScan = { findStaff() },
                         onConnect = viewModel::connect,
                         onDisconnect = viewModel::disconnect,
+                        onSyncTime = viewModel::syncTime,
+                        onOpenLogs = { showLogs = true },
                         onExplainPermission = { showPermissionDialog = true },
                     )
 
-                    Section.Characters -> Placeholder(
+                    section == Section.Characters -> Placeholder(
                         title = "Листы персонажей",
                         text = "Появятся следующим шагом. Тогда броски будут складываться " +
                             "с модификатором выбранного действия, а пока кубик выбирается вручную " +
                             "в разделе «Броски».",
                     )
 
-                    Section.Stats -> Placeholder(
+                    else -> Placeholder(
                         title = "Статистика",
                         text = "Сколько бросков за сессию, среднее по d20, распределение " +
                             "и доля критов. Появится, когда броски начнут сохраняться в базу.",
@@ -274,7 +294,13 @@ private fun ConnectionBadge(connected: Boolean, percent: Int?, onClick: () -> Un
 
 /** Верхняя панель: название раздела, счётчик бросков и состояние посоха справа. */
 @Composable
-private fun TopBar(section: Section, rollCount: Int, connection: Connection, armedFormula: String?) {
+private fun TopBar(
+    section: Section,
+    logsOpen: Boolean,
+    rollCount: Int,
+    connection: Connection,
+    armedFormula: String?,
+) {
     val scheme = MaterialTheme.colorScheme
     Row(
         modifier = Modifier
@@ -284,10 +310,15 @@ private fun TopBar(section: Section, rollCount: Int, connection: Connection, arm
             .padding(horizontal = PosohDimens.screenPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(section.title, style = MaterialTheme.typography.headlineSmall)
+        Text(
+            text = if (logsOpen) "Логи посоха" else section.title,
+            style = MaterialTheme.typography.headlineSmall,
+        )
         Spacer(Modifier.width(PosohDimens.spaceM))
         Text(
-            text = if (section == Section.Rolls && rollCount > 0) {
+            text = if (logsOpen) {
+                "обмен по Bluetooth"
+            } else if (section == Section.Rolls && rollCount > 0) {
                 "сегодня · $rollCount " + plural(rollCount, "бросок", "броска", "бросков")
             } else {
                 section.subtitle

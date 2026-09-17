@@ -100,4 +100,19 @@ object StaffIcons {
 
     /** Пояснение про геолокацию. */
     val Info: ImageVector = strokeIcon(circle(12f, 12f, 8.5f), "M12 11v5.5", "M12 7.8v.4")
+
+    /** Вернуться назад. */
+    val Back: ImageVector = strokeIcon("M19.5 12H5", "m11 5.5-6 6.5 6 6.5")
+
+    /** Отправить команду посоху. */
+    val Send: ImageVector = strokeIcon("M4 12h13", "m12 6.5 6 5.5-6 5.5")
+
+    /** Сохранить журнал в файл. */
+    val Save: ImageVector = strokeIcon("M12 4v10.5", "m7.5 11 4.5 4.5 4.5-4.5", "M5 19.5h14")
+
+    /** Очистить журнал. */
+    val Trash: ImageVector = strokeIcon("M5 7h14", "M9.5 7V4.8h5V7", "m7 7 1 12.2h8L17 7")
+
+    /** Логи посоха. */
+    val Logs: ImageVector = strokeIcon("M5 6h14", "M5 10h14", "M5 14h9", "M5 18h11")
 }

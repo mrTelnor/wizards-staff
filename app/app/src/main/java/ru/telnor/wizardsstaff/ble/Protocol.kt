@@ -26,14 +26,22 @@ sealed interface StaffEvent {
     /** Заряд: милливольты и проценты. */
     data class Battery(val millivolts: Int, val percent: Int) : StaffEvent
 
-    /** Сведения о посохе при подключении. */
-    data class Info(val firmware: String, val historySize: Int, val dice: List<Int>) : StaffEvent
+    /** Сведения о посохе при подключении. staffTime — время его часов, 0 если не выставлены. */
+    data class Info(
+        val firmware: String,
+        val historySize: Int,
+        val dice: List<Int>,
+        val staffTime: Long,
+    ) : StaffEvent
 
     /** Чего посох сейчас ждёт: покой или взведён на такой-то бросок. */
     data class State(val armed: Boolean, val count: Int, val sides: Int) : StaffEvent
 
     /** Посох не понял команду. */
     data class Error(val message: String) : StaffEvent
+
+    /** Строка из монитора посоха: срабатывания датчика, спавший взвод. */
+    data class Log(val message: String) : StaffEvent
 
     /** Ответ «сделано» на команду вроде time или map. */
     data class Ok(val command: String) : StaffEvent
@@ -70,7 +78,12 @@ fun parseStaffEvent(line: String): StaffEvent? {
             val dice = buildList {
                 if (array != null) for (i in 0 until array.length()) add(array.optInt(i))
             }
-            StaffEvent.Info(json.optString("fw"), json.optInt("hist"), dice)
+            StaffEvent.Info(
+                firmware = json.optString("fw"),
+                historySize = json.optInt("hist"),
+                dice = dice,
+                staffTime = json.optLong("ts"),
+            )
         }
 
         "state" -> {
@@ -78,6 +91,7 @@ fun parseStaffEvent(line: String): StaffEvent? {
             StaffEvent.State(armed, json.optInt("n", 1), json.optInt("d", 20))
         }
 
+        "log" -> StaffEvent.Log(json.optString("msg"))
         "err" -> StaffEvent.Error(json.optString("msg"))
         "ok" -> StaffEvent.Ok(json.optString("cmd"))
         else -> null

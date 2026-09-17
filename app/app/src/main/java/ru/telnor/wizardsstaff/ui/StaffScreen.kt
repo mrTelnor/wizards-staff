@@ -32,7 +32,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import ru.telnor.wizardsstaff.ArmedState
 import ru.telnor.wizardsstaff.ble.Connection
 import ru.telnor.wizardsstaff.ble.FoundDevice
@@ -56,9 +58,12 @@ fun StaffScreen(
     batteryPercent: Int?,
     firmware: String?,
     armed: ArmedState?,
+    clockSkew: Long?,
     onScan: () -> Unit,
     onConnect: (String) -> Unit,
     onDisconnect: () -> Unit,
+    onSyncTime: () -> Unit,
+    onOpenLogs: () -> Unit,
     onExplainPermission: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -74,7 +79,18 @@ fun StaffScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             if (connection == Connection.Connected) {
-                ConnectedCard(connectedDevice, batteryPercent, firmware, armed, onDisconnect)
+                ConnectedCard(
+                    device = connectedDevice,
+                    batteryPercent = batteryPercent,
+                    firmware = firmware,
+                    armed = armed,
+                    clockSkew = clockSkew,
+                    onDisconnect = onDisconnect,
+                    onSyncTime = onSyncTime,
+                    onOpenLogs = onOpenLogs,
+                )
+                Spacer(Modifier.height(PosohDimens.spaceL))
+                CommandsCard()
             } else {
                 Disconnected(connection, devices, scanFinished, onScan, onConnect, onExplainPermission)
             }
@@ -289,7 +305,10 @@ private fun ConnectedCard(
     batteryPercent: Int?,
     firmware: String?,
     armed: ArmedState?,
+    clockSkew: Long?,
     onDisconnect: () -> Unit,
+    onSyncTime: () -> Unit,
+    onOpenLogs: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
     Spacer(Modifier.height(PosohDimens.spaceXxxl))
@@ -334,20 +353,176 @@ private fun ConnectedCard(
             HorizontalDivider(color = scheme.outlineVariant)
             Spacer(Modifier.height(PosohDimens.spaceXl))
 
-            Row(horizontalArrangement = Arrangement.spacedBy(PosohDimens.spaceXxl)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(PosohDimens.spaceXxl),
+                verticalAlignment = Alignment.Bottom,
+            ) {
                 StaffFact("ЗАРЯД", batteryPercent?.let { "$it %" } ?: "—")
                 StaffFact("СОСТОЯНИЕ", if (armed != null) "взведён ${armed.formula}" else "покой")
                 StaffFact("ПРОШИВКА", firmware ?: "—")
+                Spacer(Modifier.weight(1f))
+                OutlinedButton(
+                    onClick = onOpenLogs,
+                    shape = RoundedCornerShape(22.dp),
+                    modifier = Modifier.height(44.dp),
+                ) {
+                    Icon(StaffIcons.Logs, contentDescription = null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(PosohDimens.spaceS))
+                    Text("Логи")
+                }
+            }
+
+            Spacer(Modifier.height(PosohDimens.spaceXl))
+            HorizontalDivider(color = scheme.outlineVariant)
+            Spacer(Modifier.height(PosohDimens.spaceL))
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = "ЧАСЫ ПОСОХА",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = scheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(PosohDimens.spaceXs))
+                    Text(
+                        text = describeSkew(clockSkew),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = scheme.onSurfaceVariant,
+                    )
+                }
+                Button(
+                    onClick = onSyncTime,
+                    shape = RoundedCornerShape(22.dp),
+                    modifier = Modifier.height(44.dp),
+                ) {
+                    Text("Синхронизировать")
+                }
             }
         }
     }
 
     Spacer(Modifier.height(PosohDimens.spaceL))
     Text(
-        text = "Часы посоха подводятся по планшету автоматически при подключении.",
+        text = "Часы посоха подводятся по планшету при каждом подключении. " +
+            "Планшет берёт точное время из сети, посох хранит его в DS3231 от батарейки.",
         style = MaterialTheme.typography.bodyMedium,
         color = scheme.onSurfaceVariant,
     )
+}
+
+/**
+ * Короткий справочник по обмену с посохом: что можно ему сказать и что он отвечает.
+ * Эти же строки можно отправлять руками на экране логов.
+ */
+@Composable
+private fun CommandsCard() {
+    val scheme = MaterialTheme.colorScheme
+    Card(
+        shape = MaterialTheme.shapes.extraLarge,
+        colors = CardDefaults.cardColors(containerColor = scheme.surface),
+        border = BorderStroke(1.dp, scheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(PosohDimens.spaceXl)) {
+            Text(
+                text = "ЯЗЫК ПОСОХА",
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(PosohDimens.spaceXs))
+            Text(
+                text = "Посох и планшет обмениваются строками JSON, по одной на сообщение. " +
+                    "Приложение шлёт их само, но то же самое можно отправить руками на экране логов.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = scheme.onSurfaceVariant,
+            )
+
+            Spacer(Modifier.height(PosohDimens.spaceL))
+            Text("Что можно сказать посоху", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(PosohDimens.spaceS))
+
+            CommandRow(
+                command = """{"cmd":"info"}""",
+                answer = """{"ev":"info","fw":"0.3.0","hist":5,"dice":[2,4,…],"ts":1789000000}""",
+                explain = "Версия прошивки, размер истории, кубики кнопок и время часов посоха.",
+            )
+            CommandRow(
+                command = """{"cmd":"arm","n":1,"d":20}""",
+                answer = """{"ev":"state","st":"armed","n":1,"d":20}""",
+                explain = "Взвести: следующий удар об пол бросит 1d20. Взвод спадает через 30 секунд.",
+            )
+            CommandRow(
+                command = """{"cmd":"disarm"}""",
+                answer = """{"ev":"state","st":"idle"}""",
+                explain = "Снять взвод. Невзведённый посох удары не считает.",
+            )
+            CommandRow(
+                command = """{"cmd":"roll","n":3,"d":6}""",
+                answer = """{"ev":"roll","id":7,"n":3,"d":6,"v":[2,1,4],"t":7,"ts":1789000000}""",
+                explain = "Бросок без удара, для отладки: посох кидает и сразу отвечает результатом.",
+            )
+            CommandRow(
+                command = """{"cmd":"time","epoch":1789000000}""",
+                answer = """{"ev":"ok","cmd":"time"}""",
+                explain = "Выставить часы. Секунды с 1 января 1970 года по UTC; приложение делает это при подключении.",
+            )
+
+            Spacer(Modifier.height(PosohDimens.spaceL))
+            Text("Что посох говорит сам", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(PosohDimens.spaceS))
+
+            CommandRow(
+                command = """{"ev":"bat","mv":3958,"pct":69}""",
+                answer = null,
+                explain = "Заряд: милливольты и проценты, раз в 10 секунд.",
+            )
+            CommandRow(
+                command = """{"ev":"roll","id":8,"n":1,"d":20,"v":[20],"t":20,"ts":…}""",
+                answer = null,
+                explain = "Бросок после удара об пол. Поле ts — время посоха, ноль значит «часы не выставлены».",
+            )
+            CommandRow(
+                command = """{"ev":"err","msg":"unknown cmd"}""",
+                answer = null,
+                explain = "Команда не понята: опечатка в JSON или неизвестное имя.",
+            )
+        }
+    }
+}
+
+/** Строка справочника: команда, ответ и пояснение по-русски. */
+@Composable
+private fun CommandRow(command: String, answer: String?, explain: String) {
+    val scheme = MaterialTheme.colorScheme
+    Column(Modifier.fillMaxWidth().padding(bottom = PosohDimens.spaceM)) {
+        Text(
+            text = command,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 13.sp,
+            color = scheme.primary,
+        )
+        if (answer != null) {
+            Text(
+                text = "→ $answer",
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+                color = scheme.onSurface,
+            )
+        }
+        Text(
+            text = explain,
+            style = MaterialTheme.typography.bodySmall,
+            color = scheme.onSurfaceVariant,
+        )
+    }
+}
+
+/** Человеческое описание расхождения часов посоха и планшета. */
+private fun describeSkew(skew: Long?): String = when {
+    skew == null -> "Часы посоха не выставлены"
+    skew == 0L -> "Совпадают с планшетом"
+    kotlin.math.abs(skew) < 60 -> "Расходятся с планшетом на ${kotlin.math.abs(skew)} с"
+    else -> "Расходятся с планшетом на ${kotlin.math.abs(skew) / 60} мин"
 }
 
 @Composable

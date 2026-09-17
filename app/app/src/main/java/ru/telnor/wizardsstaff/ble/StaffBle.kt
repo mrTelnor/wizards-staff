@@ -51,6 +51,16 @@ private const val SCAN_DURATION_MS = 12_000L
 /** Состояние связи. */
 enum class Connection { Disconnected, Scanning, Connecting, Connected, Lost }
 
+/** Кто сказал строку в журнале обмена. */
+enum class LogDirection {
+    In,       // пришло с посоха
+    Out,      // отправлено посоху
+    System,   // событие самого приложения: подключились, потеряли связь
+}
+
+/** Одна строка журнала обмена, как в мониторе порта Arduino IDE. */
+data class LogLine(val at: Long, val direction: LogDirection, val text: String)
+
 /** Найденное в эфире устройство. */
 data class FoundDevice(
     val name: String?,
@@ -82,6 +92,14 @@ class StaffBle(context: Context) {
     private val _events = MutableSharedFlow<StaffEvent>(extraBufferCapacity = 64)
     val events: SharedFlow<StaffEvent> = _events.asSharedFlow()
 
+    /** Журнал обмена: каждая строка в обе стороны. Нужен экрану логов. */
+    private val _log = MutableSharedFlow<LogLine>(extraBufferCapacity = 256)
+    val log: SharedFlow<LogLine> = _log.asSharedFlow()
+
+    private fun writeLog(direction: LogDirection, text: String) {
+        _log.tryEmit(LogLine(System.currentTimeMillis(), direction, text))
+    }
+
     private var gatt: BluetoothGatt? = null
     private var rxCharacteristic: BluetoothGattCharacteristic? = null
     private var incoming = StringBuilder()
@@ -108,6 +126,7 @@ class StaffBle(context: Context) {
 
         override fun onScanFailed(errorCode: Int) {
             Log.w(TAG, "поиск не начался, код $errorCode")
+            writeLog(LogDirection.System, "поиск не начался, код $errorCode")
             _connection.value = Connection.Disconnected
             _scanFinished.value = true
         }
@@ -133,6 +152,7 @@ class StaffBle(context: Context) {
         _devices.value = emptyList()
         _scanFinished.value = false
         _connection.value = Connection.Scanning
+        writeLog(LogDirection.System, "ищем посох")
 
         val settings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
@@ -164,6 +184,7 @@ class StaffBle(context: Context) {
         _connection.value = Connection.Connecting
         _connectedDevice.value = _devices.value.firstOrNull { it.address == address }
             ?: FoundDevice(null, address, 0, true)
+        writeLog(LogDirection.System, "подключаемся к $address")
         gatt = device.connectGatt(appContext, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
     }
 
@@ -180,6 +201,7 @@ class StaffBle(context: Context) {
         clearQueue()
         _connection.value = Connection.Disconnected
         _connectedDevice.value = null
+        writeLog(LogDirection.System, "отключились от посоха")
     }
 
     private val gattCallback = object : BluetoothGattCallback() {
@@ -198,6 +220,7 @@ class StaffBle(context: Context) {
                     clearQueue()
                     if (wantConnection) {
                         // Посох выключили или унесли. Просим систему подключиться, когда он вернётся.
+                        writeLog(LogDirection.System, "связь потеряна, ждём посох")
                         _connection.value = Connection.Lost
                         runCatching { g.connect() }
                     } else {
@@ -243,6 +266,7 @@ class StaffBle(context: Context) {
                 }
             }
             _connection.value = Connection.Connected
+            writeLog(LogDirection.System, "посох на связи")
             send(StaffCommand.info())
             // Часы посоха сразу подводим по планшету: иначе у бросков не будет времени.
             send(StaffCommand.time(System.currentTimeMillis() / 1000))
@@ -336,6 +360,7 @@ class StaffBle(context: Context) {
             val line = incoming.substring(0, end).trim()
             incoming.delete(0, end + 1)
             if (line.isEmpty()) continue
+            writeLog(LogDirection.In, line)
             val event = parseStaffEvent(line)
             if (event == null) {
                 Log.w(TAG, "непонятная строка с посоха: $line")
@@ -353,6 +378,7 @@ class StaffBle(context: Context) {
         val characteristic = rxCharacteristic ?: return
         val g = gatt ?: return
         val bytes = (line + "\n").toByteArray(Charsets.UTF_8)
+        writeLog(LogDirection.Out, line)
         enqueue {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 g.writeCharacteristic(
