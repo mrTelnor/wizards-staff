@@ -4,6 +4,7 @@
 #include <Preferences.h>
 #include "config.h"
 #include "dice.h"
+#include "log.h"
 
 // История бросков во флеш. Нужна, чтобы броски, сделанные без планшета, не пропадали:
 // приложение при подключении догрузит всё, что пропустило.
@@ -29,7 +30,7 @@ struct HistoryHeader {
   uint16_t capacity;
 };
 
-// Одна запись, ровно 36 байт. Значения и грани по два байта ради кубиков до d1000.
+// Одна запись, ровно 36 байт. Значения и грани по два байта ради костей до d1000.
 // Байт flags пока не используется: он заведён заранее под преимущество и помеху,
 // потому что менять формат потом дороже, чем зарезервировать байт сразу.
 // id == 0 означает пустую ячейку: настоящие номера начинаются с единицы.
@@ -96,9 +97,9 @@ void historyBegin() {
   if (f) f.close();
 
   if (fresh) {
-    Serial.println("История: файла нет или он другого формата, создаю заново");
+    logLine(LOG_HISTORY, LOG_INFO, "файла нет или он другого формата, создаю заново");
     if (!historyCreate()) {
-      Serial.println("История: ОШИБКА, файл не создан. Броски сохраняться не будут.");
+      logLine(LOG_HISTORY, LOG_ERROR, "файл не создан, броски сохраняться не будут");
       return;
     }
   }
@@ -112,8 +113,8 @@ void historyBegin() {
   prefs.end();
 
   historyReady = true;
-  Serial.printf("История: %u из %u записей, последний номер %u\n",
-                historyCount, (unsigned)HISTORY_FLASH_SIZE, historyLastIdValue);
+  logLine(LOG_HISTORY, LOG_INFO, "%u из %u записей, последний номер %u",
+          historyCount, (unsigned)HISTORY_FLASH_SIZE, historyLastIdValue);
 }
 
 // Выдаёт номер для нового броска и сразу запоминает его во флеш.
@@ -152,21 +153,36 @@ bool historyPush(const Roll& roll, uint32_t id, uint32_t ts, uint8_t flags) {
   return true;
 }
 
-// Отдаёт все броски с номером больше afterId, по возрастанию номера.
+// Итог одной порции выдачи: сколько отдали, каким номером кончили и осталось ли ещё.
+struct HistoryPage {
+  uint16_t sent;      // сколько записей отдали
+  uint32_t lastId;    // номер последней отданной, чтобы приложение попросило продолжение
+  bool     more;      // упёрлись в limit, за ним есть ещё записи
+};
+
+// Отдаёт до limit бросков с номером больше afterId, по возрастанию номера.
 // Обходим кольцо начиная со свободной ячейки: сразу за ней лежит самый старый бросок,
 // поэтому записи идут по порядку и сортировать ничего не нужно.
-void historyAfter(uint32_t afterId, void (*callback)(const HistoryRecord&)) {
-  if (!historyReady) return;
+// Порциями, а не целиком, потому что отправка одного события занимает до 25 мс,
+// и всё это время главный цикл стоит: 1500 записей заморозили бы посох почти на минуту.
+HistoryPage historyAfter(uint32_t afterId, uint16_t limit, void (*callback)(const HistoryRecord&)) {
+  HistoryPage page = { 0, afterId, false };
+  if (!historyReady) return page;
   File f = LittleFS.open(HISTORY_PATH, FILE_READ);
-  if (!f) return;
+  if (!f) return page;
   for (uint16_t k = 0; k < HISTORY_FLASH_SIZE; k++) {
     uint16_t slot = (uint16_t)((historyNextSlot + k) % HISTORY_FLASH_SIZE);
     HistoryRecord r = {};
     f.seek(historyOffset(slot));
     if (f.read((uint8_t*)&r, sizeof(r)) != sizeof(r)) break;
-    if (r.id != 0 && r.id > afterId) callback(r);
+    if (r.id == 0 || r.id <= afterId) continue;
+    if (page.sent >= limit) { page.more = true; break; }
+    callback(r);
+    page.sent++;
+    page.lastId = r.id;
   }
   f.close();
+  return page;
 }
 
 // Номер последнего броска. Ноль значит, что бросков ещё не было.

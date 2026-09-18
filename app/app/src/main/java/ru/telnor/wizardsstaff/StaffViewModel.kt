@@ -43,7 +43,7 @@ data class RollRecord(
     /** Формула броска: 1d20, 3d6. */
     val formula: String get() = "${count}d$sides"
 
-    /** Слагаемые: «2 + 4 + 5». У одного кубика слагаемых нет. */
+    /** Слагаемые: «2 + 4 + 5». У одной кости слагаемых нет. */
     val breakdown: String get() = if (values.size > 1) values.joinToString(" + ") else ""
 
     /** Критический успех считается только по натуральной двадцатке на одном d20. */
@@ -78,6 +78,10 @@ class StaffViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _firmware = MutableStateFlow<String?>(null)
     val firmware: StateFlow<String?> = _firmware.asStateFlow()
+
+    /** Через сколько секунд у подключённого посоха спадает взвод. Ноль — посох ещё не сказал. */
+    private val _armSeconds = MutableStateFlow(0)
+    val armSeconds: StateFlow<Int> = _armSeconds.asStateFlow()
 
     private val _dice = MutableStateFlow(listOf(2, 4, 6, 8, 10, 12, 20, 100))
     val dice: StateFlow<List<Int>> = _dice.asStateFlow()
@@ -147,6 +151,7 @@ class StaffViewModel(application: Application) : AndroidViewModel(application) {
             is StaffEvent.Info -> {
                 _firmware.value = event.firmware
                 if (event.dice.isNotEmpty()) _dice.value = event.dice
+                if (event.armSeconds > 0) _armSeconds.value = event.armSeconds
                 _clockSkew.value = if (event.staffTime > 0) {
                     event.staffTime - System.currentTimeMillis() / 1000
                 } else {
@@ -179,6 +184,7 @@ class StaffViewModel(application: Application) : AndroidViewModel(application) {
         ble.disconnect()
         _batteryPercent.value = null
         _firmware.value = null
+        _armSeconds.value = 0
         _armed.value = null
         _clockSkew.value = null
     }
@@ -203,7 +209,7 @@ class StaffViewModel(application: Application) : AndroidViewModel(application) {
 
     // ---------- взвод ----------
 
-    /** Взводит посох: следующий удар об пол бросит count кубиков по sides граней. */
+    /** Взводит посох: следующий удар об пол бросит count костей по sides граней. */
     fun arm(count: Int, sides: Int) = ble.send(StaffCommand.arm(count, sides))
 
     /** Снимает взвод. */

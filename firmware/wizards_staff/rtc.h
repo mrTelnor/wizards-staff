@@ -1,6 +1,7 @@
 #pragma once
 #include <Wire.h>
 #include "config.h"
+#include "log.h"
 
 // Часы реального времени DS3231 на модуле ZS-042. Модуль висит на шине I2C и держит время
 // от своей батарейки, пока посох выключен. Точность у DS3231 хорошая, пара минут в год.
@@ -163,7 +164,7 @@ void rtcBegin() {
   Wire.beginTransmission(I2C_ADDR_RTC);
   rtcPresent = (Wire.endTransmission() == 0);
   if (!rtcPresent) {
-    Serial.println("Часы: DS3231 не отвечает, проверь провода SDA, SCL и питание");
+    logLine(LOG_TIME, LOG_ERROR, "DS3231 не отвечает, проверь провода SDA, SCL и питание");
     return;
   }
 
@@ -173,11 +174,12 @@ void rtcBegin() {
   rtcValid = !powerLost;
 
   if (powerLost) {
-    Serial.println("Часы: питание терялось, время неизвестно, ставлю время сборки прошивки");
+    logLine(LOG_TIME, LOG_WARN, "питание терялось, время неизвестно, ставлю время сборки прошивки");
     rtcSetEpoch(rtcBuildEpoch());
   }
 
+  logSetTime(rtcEpoch());   // с этого места у журнала есть настоящее время
   char buf[24];
   rtcFormat(rtcEpoch(), buf, sizeof(buf));
-  Serial.printf("Часы: DS3231 найден, время %s%s\n", buf, powerLost ? " (примерное)" : "");
+  logLine(LOG_TIME, LOG_INFO, "DS3231 найден, время %s%s", buf, powerLost ? " (примерное)" : "");
 }

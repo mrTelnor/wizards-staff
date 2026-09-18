@@ -110,6 +110,7 @@ private fun AppFrame(viewModel: StaffViewModel = viewModel()) {
     val rolls by viewModel.rolls.collectAsState()
     val battery by viewModel.batteryPercent.collectAsState()
     val firmware by viewModel.firmware.collectAsState()
+    val armSeconds by viewModel.armSeconds.collectAsState()
     val dice by viewModel.dice.collectAsState()
     val armed by viewModel.armed.collectAsState()
     val clockSkew by viewModel.clockSkew.collectAsState()
@@ -213,6 +214,7 @@ private fun AppFrame(viewModel: StaffViewModel = viewModel()) {
                         connectedDevice = connectedDevice,
                         batteryPercent = battery,
                         firmware = firmware,
+                        armSeconds = armSeconds,
                         armed = armed,
                         clockSkew = clockSkew,
                         onScan = { findStaff() },
@@ -226,7 +228,7 @@ private fun AppFrame(viewModel: StaffViewModel = viewModel()) {
                     section == Section.Characters -> Placeholder(
                         title = "Листы персонажей",
                         text = "Появятся следующим шагом. Тогда броски будут складываться " +
-                            "с модификатором выбранного действия, а пока кубик выбирается вручную " +
+                            "с модификатором выбранного действия, а пока кость выбирается вручную " +
                             "в разделе «Броски».",
                     )
 

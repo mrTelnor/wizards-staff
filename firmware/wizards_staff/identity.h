@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include <esp_random.h>
+#include "log.h"
 
 // Опознание посоха: постоянный номер, который переживает выключение и перепрошивку.
 // Зачем он нужен помимо MAC: счётчик номеров бросков лежит в той же памяти NVS.
@@ -25,9 +26,9 @@ void identityBegin() {
       staffId = esp_random();
     } while (staffId == 0);
     prefs.putUInt("id", staffId);
-    Serial.printf("Опознание: номер посоха придуман впервые, %u\n", staffId);
+    logLine(LOG_ID, LOG_INFO, "номер посоха придуман впервые, %u", staffId);
   } else {
-    Serial.printf("Опознание: номер посоха %u\n", staffId);
+    logLine(LOG_ID, LOG_INFO, "номер посоха %u", staffId);
   }
   prefs.end();
 }

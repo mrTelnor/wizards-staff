@@ -2,6 +2,7 @@
 #include <NimBLEDevice.h>
 #include <ArduinoJson.h>
 #include "config.h"
+#include "log.h"
 
 // Связь с телефоном по Bluetooth Low Energy (протокол: docs/ПЛАН-APP.md, раздел «Протокол»).
 // Сервис Nordic UART: характеристика RX принимает JSON-команды от телефона,
@@ -37,14 +38,14 @@ class StaffServerCallbacks : public NimBLEServerCallbacks {
   void onConnect(NimBLEServer* server, NimBLEConnInfo& info) override {
     bleConnected  = true;
     bleConnHandle = info.getConnHandle();
-    Serial.println("BLE: телефон подключился");
+    logLine(LOG_BLE, LOG_INFO, "планшет подключился");
   }
   void onDisconnect(NimBLEServer* server, NimBLEConnInfo& info, int reason) override {
     bleConnected = false;
     bleQueueHead = bleQueueTail;   // недоразобранные команды прошлого сеанса не нужны
     bleRxBuffer = "";
     bleBraceDepth = 0;
-    Serial.printf("BLE: телефон отключился, причина %d\n", reason);
+    logLine(LOG_BLE, LOG_INFO, "планшет отключился, причина %d", reason);
     NimBLEDevice::startAdvertising();
   }
 };
@@ -54,7 +55,7 @@ void bleQueuePush() {
   if (!bleRxBuffer.length()) return;
   int next = (bleQueueTail + 1) % BLE_QUEUE_SIZE;
   if (next == bleQueueHead) {
-    Serial.println("BLE: очередь команд переполнена, команда потеряна");
+    logLine(LOG_BLE, LOG_WARN, "очередь команд переполнена, команда потеряна");
   } else {
     bleQueue[bleQueueTail] = bleRxBuffer;
     bleQueueTail = next;
@@ -112,9 +113,9 @@ void bleBegin() {
   scanData.addServiceUUID(NimBLEUUID(NUS_SERVICE_UUID));
   adv->setScanResponseData(scanData);
   bool ok = adv->start();
-  Serial.printf("BLE: реклама %s, имя %s, адрес %s\n",
-                ok ? "запущена" : "НЕ ЗАПУСТИЛАСЬ", BLE_DEVICE_NAME,
-                NimBLEDevice::getAddress().toString().c_str());
+  logLine(LOG_BLE, ok ? LOG_INFO : LOG_ERROR, "реклама %s, имя %s, адрес %s",
+          ok ? "запущена" : "не запустилась", BLE_DEVICE_NAME,
+          NimBLEDevice::getAddress().toString().c_str());
 }
 
 // Свой адрес BLE строкой вида "3c:0f:02:a3:f9:8a". Приложение видит этот же адрес
@@ -183,7 +184,7 @@ void bleLoop() {
   JsonDocument cmd;
   DeserializationError err = deserializeJson(cmd, line);
   if (err) {
-    Serial.printf("BLE: не разобрал команду: %s\n", err.c_str());
+    logLine(LOG_BLE, LOG_WARN, "не разобрал команду: %s", err.c_str());
     bleSendError("bad json");
     return;
   }

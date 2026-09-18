@@ -13,7 +13,7 @@ import org.json.JSONObject
 /** Событие, пришедшее с посоха. */
 sealed interface StaffEvent {
 
-    /** Бросок: сколько кубиков, какие, что выпало, сумма, время посоха (0, если часы не выставлены). */
+    /** Бросок: сколько костей, какие, что выпало, сумма, время посоха (0, если часы не выставлены). */
     data class Roll(
         val id: Long,
         val count: Int,
@@ -26,12 +26,17 @@ sealed interface StaffEvent {
     /** Заряд: милливольты и проценты. */
     data class Battery(val millivolts: Int, val percent: Int) : StaffEvent
 
-    /** Сведения о посохе при подключении. staffTime — время его часов, 0 если не выставлены. */
+    /**
+     * Сведения о посохе при подключении. staffTime — время его часов, 0 если не выставлены.
+     * armSeconds — через сколько секунд спадает взвод. Берём у посоха, а не храним у себя:
+     * иначе подсказка в приложении разъедется с прошивкой, как уже было с версией и историей.
+     */
     data class Info(
         val firmware: String,
         val historySize: Int,
         val dice: List<Int>,
         val staffTime: Long,
+        val armSeconds: Int,
     ) : StaffEvent
 
     /** Чего посох сейчас ждёт: покой или взведён на такой-то бросок. */
@@ -83,6 +88,7 @@ fun parseStaffEvent(line: String): StaffEvent? {
                 historySize = json.optInt("hist"),
                 dice = dice,
                 staffTime = json.optLong("ts"),
+                armSeconds = json.optInt("arm"),
             )
         }
 
@@ -104,7 +110,7 @@ object StaffCommand {
     /** Спросить версию прошивки и назначение кнопок. */
     fun info(): String = """{"cmd":"info"}"""
 
-    /** Взвести посох: следующий удар об пол бросит count кубиков по sides граней. */
+    /** Взвести посох: следующий удар об пол бросит count костей по sides граней. */
     fun arm(count: Int, sides: Int): String = """{"cmd":"arm","n":$count,"d":$sides}"""
 
     /** Снять взвод. */

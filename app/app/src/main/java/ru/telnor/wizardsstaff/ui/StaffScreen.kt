@@ -57,6 +57,7 @@ fun StaffScreen(
     connectedDevice: FoundDevice?,
     batteryPercent: Int?,
     firmware: String?,
+    armSeconds: Int,
     armed: ArmedState?,
     clockSkew: Long?,
     onScan: () -> Unit,
@@ -90,7 +91,9 @@ fun StaffScreen(
                     onOpenLogs = onOpenLogs,
                 )
                 Spacer(Modifier.height(PosohDimens.spaceL))
-                CommandsCard()
+                LogModulesCard()
+                Spacer(Modifier.height(PosohDimens.spaceL))
+                CommandsCard(armSeconds)
             } else {
                 Disconnected(connection, devices, scanFinished, onScan, onConnect, onExplainPermission)
             }
@@ -411,11 +414,84 @@ private fun ConnectedCard(
 }
 
 /**
+ * Расшифровка модулей в журнале посоха. Строки журнала выглядят так:
+ * «2026-09-18 18:27:22.104 STRIKE   info: 20 переключений за 100 мс, УДАР».
+ * Имена модулей в прошивке латиницей, поэтому здесь объясняем, что каждое значит.
+ */
+@Composable
+private fun LogModulesCard() {
+    val scheme = MaterialTheme.colorScheme
+    Card(
+        shape = MaterialTheme.shapes.extraLarge,
+        colors = CardDefaults.cardColors(containerColor = scheme.surface),
+        border = BorderStroke(1.dp, scheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(PosohDimens.spaceXl)) {
+            Text(
+                text = "МОДУЛИ В ЖУРНАЛЕ",
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(PosohDimens.spaceXs))
+            Text(
+                text = "Каждая строка журнала посоха начинается со времени, имени модуля " +
+                    "и уровня: info, warn или ERROR!. Уровень прижат вправо, поэтому ошибки " +
+                    "видно при беглом просмотре.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = scheme.onSurfaceVariant,
+            )
+
+            Spacer(Modifier.height(PosohDimens.spaceL))
+            ModuleRow("BOOT", "запуск посоха и сводка о нём: версия, номер, история, взвод")
+            ModuleRow("TIME", "часы DS3231: поиск, сбой питания, синхронизация с планшетом")
+            ModuleRow("FS", "раздел под файлы во флеш: размер, форматирование")
+            ModuleRow("HISTORY", "история бросков во флеш: сколько записей, выдача на планшет")
+            ModuleRow("ID", "постоянный номер посоха")
+            ModuleRow("BLE", "связь с планшетом: подключение, команды, разбор JSON")
+            ModuleRow("DICE", "кости по кнопкам и самопроверка генератора случайных чисел")
+            ModuleRow("STRIKE", "датчик удара: сколько переключений поймано и засчитан ли удар")
+            ModuleRow("CHARGE", "взвод посоха: на что взведён, когда снят")
+            ModuleRow("ROLL", "сам бросок: номер, формула, результат и слагаемые")
+            ModuleRow("BATTERY", "заряд аккумулятора, раз в 10 секунд")
+        }
+    }
+}
+
+/** Строка расшифровки: имя модуля латиницей и что оно значит. */
+@Composable
+private fun ModuleRow(module: String, explain: String) {
+    val scheme = MaterialTheme.colorScheme
+    Row(Modifier.fillMaxWidth().padding(bottom = PosohDimens.spaceS)) {
+        Text(
+            text = module,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 13.sp,
+            color = scheme.primary,
+            modifier = Modifier.width(84.dp),
+        )
+        Text(
+            text = explain,
+            style = MaterialTheme.typography.bodySmall,
+            color = scheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+/**
  * Короткий справочник по обмену с посохом: что можно ему сказать и что он отвечает.
  * Эти же строки можно отправлять руками на экране логов.
  */
 @Composable
-private fun CommandsCard() {
+private fun CommandsCard(armSeconds: Int) {
+    // Число берём у подключённого посоха, а не держим своё: иначе подсказка разъедется
+    // с прошивкой. Ноль значит, что посох ещё не ответил на info.
+    val armText = when {
+        armSeconds <= 0 -> "через время, заданное в посохе"
+        armSeconds % 60 == 0 -> "через ${armSeconds / 60} мин"
+        else -> "через $armSeconds с"
+    }
     val scheme = MaterialTheme.colorScheme
     Card(
         shape = MaterialTheme.shapes.extraLarge,
@@ -443,13 +519,13 @@ private fun CommandsCard() {
 
             CommandRow(
                 command = """{"cmd":"info"}""",
-                answer = """{"ev":"info","fw":"0.3.0","hist":5,"dice":[2,4,…],"ts":1789000000}""",
-                explain = "Версия прошивки, размер истории, кубики кнопок и время часов посоха.",
+                answer = """{"ev":"info","fw":"0.4.0","staffId":2344588055,"mac":"3c:0f:…","hist":1500,"arm":300,"dice":[2,4,…],"ts":1789000000}""",
+                explain = "Версия прошивки, постоянный номер посоха, его адрес, ёмкость истории во флеш, время жизни взвода в секундах, кости кнопок и время часов.",
             )
             CommandRow(
                 command = """{"cmd":"arm","n":1,"d":20}""",
                 answer = """{"ev":"state","st":"armed","n":1,"d":20}""",
-                explain = "Взвести: следующий удар об пол бросит 1d20. Взвод спадает через 30 секунд.",
+                explain = "Взвести: следующий удар об пол бросит 1d20. Взвод спадает $armText.",
             )
             CommandRow(
                 command = """{"cmd":"disarm"}""",
@@ -460,6 +536,16 @@ private fun CommandsCard() {
                 command = """{"cmd":"roll","n":3,"d":6}""",
                 answer = """{"ev":"roll","id":7,"n":3,"d":6,"v":[2,1,4],"t":7,"ts":1789000000}""",
                 explain = "Бросок без удара, для отладки: посох кидает и сразу отвечает результатом.",
+            )
+            CommandRow(
+                command = """{"cmd":"hist","after":0}""",
+                answer = """{"ev":"roll",…} … {"ev":"histend","sent":50,"last":50,"more":true}""",
+                explain = "Догрузить пропущенные броски. Отдаёт порциями по 50: повторять с after из поля last, пока more не станет false.",
+            )
+            CommandRow(
+                command = """{"cmd":"map","dice":[3,4,6,8,10,12,20,1000]}""",
+                answer = """{"ev":"map","ok":true}""",
+                explain = "Назначить кости восьми кнопкам. Все восемь разом, значения от 2 до 1000; настройка переживает выключение.",
             )
             CommandRow(
                 command = """{"cmd":"time","epoch":1789000000}""",
@@ -480,6 +566,11 @@ private fun CommandsCard() {
                 command = """{"ev":"roll","id":8,"n":1,"d":20,"v":[20],"t":20,"ts":…}""",
                 answer = null,
                 explain = "Бросок после удара об пол. Поле ts — время посоха, ноль значит «часы не выставлены».",
+            )
+            CommandRow(
+                command = """{"ev":"log","msg":"2026-09-18 18:27:22.104 STRIKE   info: …"}""",
+                answer = null,
+                explain = "Строка журнала посоха. Приходят все служебные сообщения, те же, что видны в мониторе порта.",
             )
             CommandRow(
                 command = """{"ev":"err","msg":"unknown cmd"}""",

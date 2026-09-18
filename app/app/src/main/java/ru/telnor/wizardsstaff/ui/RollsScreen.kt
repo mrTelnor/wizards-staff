@@ -74,7 +74,7 @@ import java.util.Locale
  * сначала карточки, под ними лента.
  *
  * Пока нет листов персонажей, место карточки «активное действие» занимает карточка взвода:
- * кубик выбирается здесь и уходит на посох, удар об пол бросает именно его.
+ * кость выбирается здесь и уходит на посох, удар об пол бросает именно её.
  */
 
 /** С какой ширины экрана помещаются две колонки. */
@@ -206,7 +206,7 @@ private fun FeedHeader(rolls: List<RollRecord>) {
 
 /**
  * Последний бросок крупно: его должно быть видно через стол.
- * Сумма стоит по центру, под ней — что выпало на каждом кубике; формула в шапке.
+ * Сумма стоит по центру, под ней — что выпало на каждой кости; формула в шапке.
  */
 @Composable
 private fun LastRollCard(roll: RollRecord?, onToggleDiscarded: (String) -> Unit) {
@@ -368,7 +368,7 @@ private fun RollingTotal(roll: RollRecord, content: Color): Boolean {
         if (System.currentTimeMillis() - roll.receivedAt > 2000) return@LaunchedEffect
 
         spinning = true
-        val smallest = roll.count                 // на всех кубиках выпали единицы
+        val smallest = roll.count                 // на всех костях выпали единицы
         val largest = roll.count * roll.sides     // на всех выпал максимум
         val startedAt = System.currentTimeMillis()
         var step = 45L
@@ -413,7 +413,7 @@ private fun RollingTotal(roll: RollRecord, content: Color): Boolean {
     return spinning
 }
 
-/** Взвод: выбор кубика и команда посоху. Пока нет кнопок на посохе, это единственный способ. */
+/** Взвод: выбор кости и команда посоху. Пока нет кнопок на посохе, это единственный способ. */
 @Composable
 private fun ArmCard(
     armed: ArmedState?,
@@ -492,14 +492,14 @@ private fun ArmCard(
                 style = MaterialTheme.typography.titleMedium,
             )
             Text(
-                text = "Выбери кубик — удар об пол бросит его",
+                text = "Выбери кость — удар об пол бросит её",
                 style = MaterialTheme.typography.bodySmall,
                 color = scheme.onSurfaceVariant,
             )
 
             Spacer(Modifier.height(PosohDimens.spaceM))
 
-            // Кубики в два ряда по четыре: строка из восьми на планшете влезает,
+            // Кости в два ряда по четыре: строка из восьми на планшете влезает,
             // но на узком экране разъезжается, а перенос строк здесь проще колонки.
             dice.chunked(4).forEach { row ->
                 Row(
@@ -521,7 +521,7 @@ private fun ArmCard(
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = "Кубиков",
+                    text = "Костей",
                     style = MaterialTheme.typography.bodyMedium,
                     color = scheme.onSurfaceVariant,
                 )
@@ -550,7 +550,7 @@ private fun ArmCard(
     }
 }
 
-/** Кнопка выбора кубика. */
+/** Кнопка выбора кости. */
 @Composable
 private fun DiceButton(
     label: String,
@@ -575,7 +575,7 @@ private fun DiceButton(
     }
 }
 
-/** Счётчик количества кубиков: от одного до десяти, больше посох не бросает. */
+/** Счётчик количества костей: от одной до десяти, больше посох не бросает. */
 @Composable
 private fun CountStepper(count: Int, onChange: (Int) -> Unit) {
     val scheme = MaterialTheme.colorScheme
@@ -631,7 +631,7 @@ private fun StaffStateCard(
         connection == Connection.Lost -> "Потерялся: нажми, чтобы открыть раздел «Посох»"
         !connected -> "Нажми, чтобы найти и подключить посох"
         armed != null -> "Ждёт удара об пол"
-        else -> "Взведи его, чтобы бросить кубик"
+        else -> "Взведи его, чтобы бросить кость"
     }
 
     Card(
@@ -703,7 +703,7 @@ private fun FormulaChip(formula: String, contentColor: Color) {
 }
 
 /**
- * Карточка броска в ленте. Высота не задана жёстко: у броска десятью кубиками
+ * Карточка броска в ленте. Высота не задана жёстко: у броска десятью костями
  * строка слагаемых длинная и должна переноситься, а не обрезаться.
  */
 @Composable
