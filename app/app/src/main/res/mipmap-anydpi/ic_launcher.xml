@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    Иконка приложения: пиксельный посох, исходник docs/design/icon-pixel/icon-512.png.
+    Монохромного слоя нет намеренно: у цветного пиксель-арта силуэт превращается
+    в сплошное пятно, и тематический значок Android 13+ выглядел бы хуже обычного.
+-->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@drawable/ic_launcher_background" />
     <foreground android:drawable="@drawable/ic_launcher_foreground" />
-    <monochrome android:drawable="@drawable/ic_launcher_foreground" />
 </adaptive-icon>

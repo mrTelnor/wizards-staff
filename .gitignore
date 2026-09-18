@@ -1,4 +1,5 @@
 /docs/
+Claude outputs/
 CLAUDE.local.md
 .claude/settings.local.json
 .vscode/
