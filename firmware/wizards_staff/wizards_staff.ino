@@ -3,7 +3,10 @@
 // на нужный кубик, удар об пол бросает его и отдаёт бросок в Serial и на планшет.
 // Пока нет кнопок, взвод приходит только из приложения; невзведённый посох удары не считает.
 // Этот файл временный, в задаче 3 основного плана его заменит настоящая прошивка.
+#include <LittleFS.h>
 #include "config.h"
+#include "identity.h"
+#include "history.h"
 #include "battery.h"
 #include "dice.h"
 #include "strike.h"
@@ -17,7 +20,6 @@ unsigned long lastBatteryAt = 0;
 unsigned long lastBlinkAt   = 0;
 unsigned long lastRollAt    = 0;
 bool          ledOn         = false;
-uint32_t      rollId        = 0;      // сквозной номер броска, пока только с включения
 
 // Взвод: какой бросок сделает следующий удар об пол. Ноль в armedCount значит «не взведён»,
 // тогда удары не считаются вовсе. Пока нет кнопок на посохе, взводит приложение командой arm.
@@ -38,23 +40,25 @@ void sendState() {
 }
 
 // Делает бросок, печатает его и отправляет на планшет.
-void doRoll(uint8_t count, uint8_t sides) {
+void doRoll(uint8_t count, uint16_t sides) {
   Roll r = rollDice(count, sides);
-  rollId++;
+  uint32_t id = historyNextId();        // номер сквозной, во флеш, не начинается заново
+  uint32_t ts = rtcEpoch();             // ноль, если часов нет: планшет подставит своё время
+  if (!historyPush(r, id, ts, 0)) Serial.println("История: бросок не записан во флеш!");
 
-  char buf[64];
+  char buf[80];
   rollBreakdown(r, buf, sizeof(buf));
-  Serial.printf("Бросок #%lu: %dd%d = %d (%s)\n", (unsigned long)rollId, r.count, r.sides, r.total, buf);
+  Serial.printf("Бросок #%u: %dd%d = %d (%s)\n", id, r.count, r.sides, r.total, buf);
 
   JsonDocument doc;
   doc["ev"] = "roll";
-  doc["id"] = rollId;
+  doc["id"] = id;
   doc["n"]  = r.count;
   doc["d"]  = r.sides;
   JsonArray v = doc["v"].to<JsonArray>();
   for (int i = 0; i < r.count; i++) v.add(r.values[i]);
   doc["t"]  = r.total;
-  doc["ts"] = rtcEpoch();   // ноль, если часов нет или время не выставлено: планшет подставит своё
+  doc["ts"] = ts;
   bleSend(doc);
 
   lastRollAt = millis();
@@ -68,10 +72,12 @@ void bleOnCommand(JsonDocument& cmd) {
 
   if (strcmp(name, "info") == 0) {
     JsonDocument doc;
-    doc["ev"]   = "info";
-    doc["fw"]   = FW_VERSION;
-    doc["hist"] = HISTORY_SIZE;
-    doc["ts"]   = rtcEpoch();   // время посоха: приложение покажет его рядом со своим
+    doc["ev"]      = "info";
+    doc["fw"]      = FW_VERSION;
+    doc["staffId"] = staffId;     // постоянный номер посоха, переживает выключение
+    doc["mac"]     = bleMac();    // тот же адрес, что приложение видит при сканировании
+    doc["hist"]    = HISTORY_FLASH_SIZE;   // ёмкость истории во флеш, а не экранной
+    doc["ts"]      = rtcEpoch();  // время посоха: приложение покажет его рядом со своим
     JsonArray dice = doc["dice"].to<JsonArray>();
     for (int i = 0; i < 8; i++) dice.add(DICE_SIDES[i]);
     bleSend(doc);
@@ -127,16 +133,39 @@ void bleOnCommand(JsonDocument& cmd) {
   bleSendError("unknown cmd");
 }
 
+// Готовит раздел под файлы (LittleFS) и печатает его размер. Размер нужен, чтобы выбрать
+// ёмкость истории бросков в задаче B2: в плане стоит 2000 записей по 24 байта, около 48 КБ.
+// Если раздел не монтируется, форматируем: после смены схемы разделов файловой системы там
+// нет вовсе, и терять нечего. Замер 2026-09-18 показал именно этот случай.
+void reportFlash() {
+  if (!LittleFS.begin(false)) {
+    Serial.println("LittleFS: раздел не смонтирован, форматирую (читаемых данных там нет)");
+    if (!LittleFS.format() || !LittleFS.begin(false)) {
+      Serial.println("LittleFS: ОШИБКА, раздел не поднялся даже после форматирования.");
+      Serial.println("Проверь Tools -> Partition Scheme: нужен Minimal SPIFFS с разделом под файлы.");
+      return;
+    }
+    Serial.println("LittleFS: отформатирован успешно");
+  }
+  Serial.printf("LittleFS: %u КБ всего, %u КБ занято, %u КБ свободно\n",
+                (unsigned)(LittleFS.totalBytes() / 1024),
+                (unsigned)(LittleFS.usedBytes() / 1024),
+                (unsigned)((LittleFS.totalBytes() - LittleFS.usedBytes()) / 1024));
+}
+
 void setup() {
   Serial.begin(115200);
   pinMode(PIN_LED, OUTPUT);
   digitalWrite(PIN_LED, HIGH);
   delay(1500);
   Serial.println("Wizards staff: проверка BLE и датчика удара");
+  reportFlash();
+  historyBegin();
   batteryBegin();
   strikeBegin();
   rtcBegin();
   bleBegin();
+  identityBegin();   // после bleBegin: генератор случайных чисел точнее при включённом радио
   diceSelfTest();
 }
 

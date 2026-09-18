@@ -5,15 +5,18 @@
 // Бросок кубиков. Случайные числа даёт аппаратный генератор ESP32, поэтому бросок честный.
 
 // Один бросок: сколько кубиков, каких, что выпало на каждом, сумма.
+// Грани и значения по два байта, а не по одному: протокол разрешает кубики до d1000
+// (в ТЗ, раздел 7а, это «например d3 или d1000»), а в байт влезает только 255.
+// До 2026-09-18 поля были однобайтовыми, и запрос d1000 молча превращался в d232.
 struct Roll {
-  uint8_t count;
-  uint8_t sides;
-  uint8_t values[MAX_DICE];
-  int     total;
+  uint8_t  count;
+  uint16_t sides;
+  uint16_t values[MAX_DICE];
+  int      total;
 };
 
 // Бросает count кубиков по sides граней. count ограничен MAX_DICE.
-Roll rollDice(uint8_t count, uint8_t sides) {
+Roll rollDice(uint8_t count, uint16_t sides) {
   Roll r;
   r.count = count > MAX_DICE ? MAX_DICE : count;
   r.sides = sides;
