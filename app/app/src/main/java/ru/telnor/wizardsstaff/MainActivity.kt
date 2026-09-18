@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -139,8 +140,12 @@ private fun AppFrame(viewModel: StaffViewModel = viewModel()) {
         }
     }
 
+    // imePadding обязателен: enableEdgeToEdge() отключает автоматическую подгонку окна,
+    // и windowSoftInputMode="adjustResize" из манифеста перестаёт работать. Без этого
+    // экранная клавиатура просто ложится поверх содержимого и закрывает поле ввода.
+    // Стоит на уровне каркаса, чтобы работало на всех экранах, а не только на журнале.
     Scaffold(containerColor = scheme.background) { innerPadding ->
-        Row(Modifier.fillMaxSize().padding(innerPadding)) {
+        Row(Modifier.fillMaxSize().padding(innerPadding).imePadding()) {
 
             NavigationRail(
                 containerColor = scheme.surface,

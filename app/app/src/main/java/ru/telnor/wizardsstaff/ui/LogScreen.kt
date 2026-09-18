@@ -7,12 +7,16 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -48,7 +52,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -86,6 +93,15 @@ fun LogScreen(
 ) {
     val scheme = MaterialTheme.colorScheme
     val context = LocalContext.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    val focus = LocalFocusManager.current
+
+    /** Отправляет команду и убирает клавиатуру: держать её открытой после отправки незачем. */
+    fun sendAndHide(text: String) {
+        onSend(text)
+        focus.clearFocus()
+        keyboard?.hide()
+    }
 
     var query by rememberSaveable { mutableStateOf("") }
     var command by rememberSaveable { mutableStateOf("") }
@@ -104,7 +120,10 @@ fun LogScreen(
 
     // Автопрокрутка: пока включена, экран следует за свежими строками. Выключил — журнал
     // стоит на месте, и можно спокойно читать, хотя строки продолжают приходить.
-    LaunchedEffect(shown.size, autoScroll) {
+    // Высота клавиатуры в ключах: когда она выезжает, список становится короче, и без этого
+    // автопрокрутка осталась бы стоять там, где была, показывая уже не последние строки.
+    val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
+    LaunchedEffect(shown.size, autoScroll, imeBottom) {
         if (autoScroll && shown.isNotEmpty()) listState.animateScrollToItem(shown.lastIndex)
     }
 
@@ -216,7 +235,15 @@ fun LogScreen(
             shape = MaterialTheme.shapes.medium,
             colors = CardDefaults.cardColors(containerColor = scheme.surfaceContainerLowest),
             border = BorderStroke(1.dp, scheme.outlineVariant),
-            modifier = Modifier.fillMaxWidth().weight(1f),
+            // Касание журнала убирает клавиатуру: иначе закрыть её можно только системным
+            // жестом «назад», а это не очевидно. Прокрутке списка не мешает: сюда приходят
+            // только касания без движения, протяжки забирает LazyColumn.
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .pointerInput(Unit) {
+                    detectTapGestures { focus.clearFocus(); keyboard?.hide() }
+                },
         ) {
             if (shown.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -260,14 +287,14 @@ fun LogScreen(
                 placeholder = { Text("""{"cmd":"info"}""") },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                 keyboardActions = KeyboardActions(onSend = {
-                    onSend(command)
+                    sendAndHide(command)
                     command = ""
                 }),
             )
             Spacer(Modifier.width(PosohDimens.spaceM))
             FilledIconButton(
                 onClick = {
-                    onSend(command)
+                    sendAndHide(command)
                     command = ""
                 },
                 enabled = connected && command.isNotBlank(),
