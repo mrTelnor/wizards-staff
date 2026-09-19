@@ -34,18 +34,12 @@ static const char* LOG_BATTERY = "BATTERY";   // заряд аккумулято
 // когда планшет подключается и отключается. Через указатель, а не прямым вызовом bleSendLog,
 // иначе log.h и ble.h включали бы друг друга.
 //
-// Пустой указатель значит «планшета нет», и такие строки копятся в буфере ниже.
+// Пустой указатель значит «планшета нет»: такая строка уходит только в монитор порта.
+// Журнал загрузки в приложение не попадает и не копится - до подключения планшета
+// он весь печатается в первые полсекунды, а плата на этом этапе и так подключена к ПК.
+// Буфер на 30 строк, который раньше сливался при подключении, убран 2026-09-19:
+// около 3 КБ оперативной памяти ради того, что и так видно в мониторе порта.
 void (*logSink)(const char*) = nullptr;
-
-// Буфер строк, написанных без планшета. Нужен ради загрузки посоха: BOOT, FS, HISTORY,
-// DICE и ID печатаются в первые полсекунды, когда планшет подключиться ещё не успел,
-// и без буфера в приложение не попадала ни одна строка о старте, включая ошибки файловой
-// системы. При подключении буфер выливается в приложение и очищается.
-// Кольцевой: переполнился - вытесняем самое старое, свежее важнее.
-const int LOG_BUFFER_SIZE = 30;       // около 3 КБ оперативной памяти
-String logBuffer[LOG_BUFFER_SIZE];
-int    logBufferHead  = 0;            // куда писать следующую
-int    logBufferCount = 0;            // сколько накоплено, не больше LOG_BUFFER_SIZE
 
 // Время, от которого считаем: пара «сколько было на часах» и «сколько было на millis()».
 // Секунды берём отсюда, а не из DS3231 при каждой строке: чтение по I2C занимает около
@@ -93,6 +87,21 @@ static void logTimestamp(char* out, size_t len) {
 }
 
 // Собирает и печатает строку. toApp говорит, отдавать ли её ещё и в приложение.
+// Отсекает с конца оборванный символ UTF-8. Русская буква занимает два байта, и snprintf,
+// обрезая строку по размеру буфера, может рассечь её пополам: вместо буквы получается
+// половинка, и приложение рисует на её месте ромбик с вопросом. Здесь отступаем назад
+// до последнего целого символа. У продолжающих байтов старшие биты 10, у первого байта
+// символа - 11, по ним и определяем, сколько байт символ обязан занимать.
+static void logTrimBrokenUtf8(char* s) {
+  size_t len = strlen(s);
+  if (len == 0) return;
+  size_t k = len - 1;
+  while (k > 0 && ((unsigned char)s[k] & 0xC0) == 0x80) k--;
+  unsigned char lead = (unsigned char)s[k];
+  size_t need = lead < 0x80 ? 1 : lead >= 0xF0 ? 4 : lead >= 0xE0 ? 3 : lead >= 0xC0 ? 2 : 1;
+  if (len - k < need) s[k] = 0;   // символ начался, но целиком не поместился
+}
+
 static void logEmit(const char* module, LogLevel level, const char* text, bool toApp) {
   char stamp[24];
   logTimestamp(stamp, sizeof(stamp));
@@ -100,36 +109,12 @@ static void logEmit(const char* module, LogLevel level, const char* text, bool t
 
   char line[256];
   snprintf(line, sizeof(line), "%s %-7s %6s: %s", stamp, module, lv, text);
+  logTrimBrokenUtf8(line);   // строку могло обрезать по размеру буфера, см. комментарий выше
 
   Serial.println(line);
   if (!toApp) return;
 
-  if (logSink) {
-    logSink(line);
-  } else {
-    logBuffer[logBufferHead] = line;
-    logBufferHead = (logBufferHead + 1) % LOG_BUFFER_SIZE;
-    if (logBufferCount < LOG_BUFFER_SIZE) logBufferCount++;
-  }
-}
-
-// Отдаёт приложению всё, что накопилось без него, от старого к свежему, и очищает буфер.
-// Зовётся из главного скетча через полсекунды после подключения: сразу нельзя, пока
-// не согласован размер пакета, строки резались бы на куски по 20 байт.
-// Возвращает, сколько строк отдал: главный скетч печатает это число в монитор порта,
-// чтобы по логу было видно, копился ли буфер и сработал ли слив.
-int logFlush() {
-  if (!logSink) return -1;              // планшета нет, отдавать некому
-  if (logBufferCount == 0) return 0;    // копить было нечего
-  int sent = logBufferCount;
-  int first = (logBufferHead - logBufferCount + LOG_BUFFER_SIZE) % LOG_BUFFER_SIZE;
-  for (int i = 0; i < sent; i++) {
-    logSink(logBuffer[(first + i) % LOG_BUFFER_SIZE].c_str());
-  }
-  for (int i = 0; i < LOG_BUFFER_SIZE; i++) logBuffer[i] = "";
-  logBufferCount = 0;
-  logBufferHead  = 0;
-  return sent;
+  if (logSink) logSink(line);
 }
 
 // Пишет строку журнала в монитор порта и в приложение. Формат как у printf.

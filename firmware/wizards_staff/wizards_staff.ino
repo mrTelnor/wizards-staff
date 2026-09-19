@@ -15,30 +15,26 @@
 #include "ble.h"
 
 const int     PIN_LED       = 8;      // светодиод на плате SuperMini, горит при LOW
-const uint8_t DEFAULT_SIDES = 20;     // кость, которая подставляется, если в команде не сказано иное
+// Кость, которая подставляется, если в команде не сказано иное.
+// Тип не случаен. Оператор | у ArduinoJson смотрит на тип значения справа и отдаёт
+// его, если присланное число в этот тип не влезает. Пока константа была uint8_t,
+// запрос d1000 молча превращался в d20: тысяча не влезает в байт. Поэтому и сама
+// константа двухбайтовая, и в местах разбора стоит явное приведение к int —
+// иначе d70000 снова стал бы двадцаткой вместо честного отказа.
+const uint16_t DEFAULT_SIDES = 20;
 
 unsigned long lastBatteryAt = 0;
 unsigned long lastBlinkAt   = 0;
 unsigned long lastRollAt    = 0;
 bool          ledOn         = false;
 
-// Отслеживание связи для журнала: пока планшета нет, строки копятся в буфере log.h,
-// при подключении выливаются в приложение.
-//
-// Момент слива выбран по первой команде от планшета, а не по таймеру. Android подключается,
-// потом ищет службы, потом подписывается на уведомления, и всё это занимает больше секунды.
-// Слить раньше подписки значит отправить строки в пустоту: приложение их просто не услышит.
-// А раз команда пришла, значит подписка уже есть, приложение сначала подписывается и только
-// потом пишет. Таймер оставлен запасным: вдруг подключились сторонней программой и молчат.
+// Отслеживание связи для журнала: пока планшета нет, строки идут только в монитор порта.
 bool          logWasConnected = false;
-unsigned long logConnectedAt  = 0;
-bool          logFlushPending = false;
-bool          logGotCommand   = false;   // планшет заговорил, значит уведомления он уже слушает
 
 // Взвод: какой бросок сделает следующий удар об пол. Ноль в armedCount значит «не взведён»,
 // тогда удары не считаются вовсе. Пока нет кнопок на посохе, взводит приложение командой arm.
 uint8_t       armedCount = 0;
-uint8_t       armedSides = 0;
+uint16_t      armedSides = 0;        // два байта: кости бывают до d1000, в байт такая не влезет
 unsigned long armedAt    = 0;         // когда взвели: через ARM_TIMEOUT_MS взвод сам спадает
 
 // Рассказывает телефону, чего посох сейчас ждёт.
@@ -94,7 +90,6 @@ void doRoll(uint8_t count, uint16_t sides) {
 
 // Разбирает команду от телефона. Команды по протоколу из docs/ПЛАН-APP.md.
 void bleOnCommand(JsonDocument& cmd) {
-  logGotCommand = true;   // планшет заговорил: можно сливать накопленный журнал
   const char* name = cmd["cmd"] | "";
   // Только в монитор порта: в приложении эта строка всегда стоит прямо под отправленной
   // командой, которую и так видно, и не добавляет ничего.
@@ -142,8 +137,14 @@ void bleOnCommand(JsonDocument& cmd) {
   if (strcmp(name, "arm") == 0) {
     // Взвод: следующий удар об пол бросит именно этот набор костей.
     int n = cmd["n"] | 1;
-    int d = cmd["d"] | DEFAULT_SIDES;
-    if (n < 1 || n > MAX_DICE || d < 2 || d > 1000) { bleSendError("bad arm"); return; }
+    int d = cmd["d"] | (int)DEFAULT_SIDES;   // приведение обязательно, см. DEFAULT_SIDES
+    if (n < 1 || n > MAX_DICE || d < 2 || d > 1000) {
+      char why[BLE_ERROR_TEXT];
+      snprintf(why, sizeof(why), "взвод %dd%d невозможен: костей от 1 до %d, граней от 2 до 1000",
+               n, d, MAX_DICE);
+      bleSendError("bad arm", why);
+      return;
+    }
     armedCount = n;
     armedSides = d;
     armedAt    = millis();
@@ -163,8 +164,15 @@ void bleOnCommand(JsonDocument& cmd) {
   if (strcmp(name, "time") == 0) {
     // Телефон присылает секунды от 1970 года по UTC, кладём их в часы.
     long epoch = cmd["epoch"] | 0L;
-    if (epoch < 1700000000L) { bleSendError("bad epoch"); return; }   // явно не наше время
-    if (!rtcSetEpoch(epoch)) { bleSendError("no rtc"); return; }
+    // Число меньше этого - ноябрь 2023 года и раньше, то есть явно не наше время.
+    if (epoch < 1700000000L) {
+      bleSendError("bad epoch", "время не принято: прислано число раньше ноября 2023 года");
+      return;
+    }
+    if (!rtcSetEpoch(epoch)) {
+      bleSendError("no rtc", "часы DS3231 не отвечают, время не записано");
+      return;
+    }
     char buf[24];
     rtcFormat(rtcEpoch(), buf, sizeof(buf));
     logSetTime(rtcEpoch());
@@ -179,8 +187,14 @@ void bleOnCommand(JsonDocument& cmd) {
   if (strcmp(name, "roll") == 0) {
     // Имитация удара с планшета: для отладки приложения без стука по столу.
     int n = cmd["n"] | 1;
-    int d = cmd["d"] | DEFAULT_SIDES;
-    if (n < 1 || n > MAX_DICE || d < 2 || d > 1000) { bleSendError("bad roll"); return; }
+    int d = cmd["d"] | (int)DEFAULT_SIDES;   // приведение обязательно, см. DEFAULT_SIDES
+    if (n < 1 || n > MAX_DICE || d < 2 || d > 1000) {
+      char why[BLE_ERROR_TEXT];
+      snprintf(why, sizeof(why), "бросок %dd%d невозможен: костей от 1 до %d, граней от 2 до 1000",
+               n, d, MAX_DICE);
+      bleSendError("bad roll", why);
+      return;
+    }
     doRoll(n, d);
     return;
   }
@@ -205,11 +219,23 @@ void bleOnCommand(JsonDocument& cmd) {
     // Назначение костей кнопкам. Проверяем все восемь разом и пишем только целиком:
     // половина новой таблицы и половина старой хуже, чем отказ.
     JsonArray dice = cmd["dice"];
-    if (dice.isNull() || dice.size() != 8) { bleSendError("map needs 8 dice"); return; }
+    if (dice.isNull() || dice.size() != 8) {
+      char why[BLE_ERROR_TEXT];
+      snprintf(why, sizeof(why), "в команде map должно быть ровно 8 костей, пришло %u",
+               (unsigned)(dice.isNull() ? 0 : dice.size()));
+      bleSendError("map needs 8 dice", why);
+      return;
+    }
     uint16_t fresh[8];
     for (int i = 0; i < 8; i++) {
       int v = dice[i] | 0;
-      if (v < 2 || v > DICE_SIDES_MAX) { bleSendError("bad dice value"); return; }
+      if (v < 2 || v > DICE_SIDES_MAX) {
+        char why[BLE_ERROR_TEXT];
+        snprintf(why, sizeof(why), "кость номер %d задана как d%d, разрешено от d2 до d%u",
+                 i + 1, v, (unsigned)DICE_SIDES_MAX);
+        bleSendError("bad dice value", why);
+        return;
+      }
       fresh[i] = (uint16_t)v;
     }
     memcpy(diceSides, fresh, sizeof(diceSides));
@@ -224,7 +250,12 @@ void bleOnCommand(JsonDocument& cmd) {
     return;
   }
 
-  bleSendError("unknown cmd");
+  // Пустое имя значит, что поля cmd в присланном JSON не было вовсе: это другая ошибка,
+  // и человеку полезнее услышать про неё, а не про незнакомую команду с пустым именем.
+  char why[BLE_ERROR_TEXT];
+  if (name[0]) snprintf(why, sizeof(why), "команда %s посоху незнакома", name);
+  else         snprintf(why, sizeof(why), "в присланном JSON нет поля cmd");
+  bleSendError("unknown cmd", why);
 }
 
 // Готовит раздел под файлы (LittleFS) и печатает его размер. Размер нужен, чтобы выбрать
@@ -269,23 +300,10 @@ void loop() {
   unsigned long now = millis();
 
   // Планшет появился или пропал: включаем и выключаем отправку журнала в приложение.
+  // Накопленного журнала нет: то, что напечаталось до подключения, осталось в мониторе порта.
   if (bleConnected != logWasConnected) {
     logWasConnected = bleConnected;
-    if (bleConnected) {
-      logSink         = bleSendLog;
-      logConnectedAt  = now;
-      logFlushPending = true;
-      logGotCommand   = false;
-    } else {
-      logSink = nullptr;   // дальше строки копятся в буфере до следующего подключения
-    }
-  }
-  if (logFlushPending && (logGotCommand || now - logConnectedAt >= LOG_FLUSH_FALLBACK_MS)) {
-    logFlushPending = false;
-    int sent = logFlush();
-    // Только в монитор порта: в приложении эти строки и так сейчас появятся.
-    logLocal(LOG_BLE, LOG_INFO, "журнал старта: отдано планшету %d строк (%s)", sent,
-             logGotCommand ? "по первой команде" : "по запасному таймеру");
+    logSink = bleConnected ? bleSendLog : nullptr;
   }
 
   // Датчик опрашиваем всегда, иначе фильтр не увидит начало пачки переключений.

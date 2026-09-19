@@ -166,12 +166,27 @@ void bleSendLog(const char* msg) {
   bleSend(doc);
 }
 
-// Короткий ответ об ошибке: телефон увидит, что команда не понята.
-void bleSendError(const char* msg) {
+// Ответ об отказе. Уходит двумя сообщениями сразу, и оба нужны.
+//
+// Первое - машинное событие err с коротким кодом по-английски: код часть протокола,
+// по нему приложение когда-нибудь будет разбирать причину отказа само.
+// Второе - строка журнала по-русски, уровень warn. Без неё под фильтром «Инфо» отказ
+// выглядел как молчание посоха: машинный JSON там скрыт, и человек видел, что команда
+// ушла, а в ответ ничего. Уровень warn, а не info, чтобы отказ попадал ещё и в «Ошибки».
+//
+// human - что случилось, словами и с подробностями. Если его не передали, в журнал
+// идёт сам код: лучше английская строка, чем пустота.
+//
+// Буфер под human отмеряется в БАЙТАХ, а русская буква в UTF-8 занимает два. Поэтому
+// BLE_ERROR_TEXT с запасом: при 80 байтах фраза про восемь костей обрывалась на полуслове.
+const size_t BLE_ERROR_TEXT = 160;   // размер буфера под human, см. пояснение выше
+
+void bleSendError(const char* msg, const char* human = nullptr) {
   JsonDocument doc;
   doc["ev"]  = "err";
   doc["msg"] = msg;
   bleSend(doc);
+  logLine(LOG_BLE, LOG_WARN, "отказ: %s", human ? human : msg);
 }
 
 // Вызывать в каждом обороте loop(): берёт из очереди одну команду, разбирает и отдаёт
@@ -184,8 +199,9 @@ void bleLoop() {
   JsonDocument cmd;
   DeserializationError err = deserializeJson(cmd, line);
   if (err) {
-    logLine(LOG_BLE, LOG_WARN, "не разобрал команду: %s", err.c_str());
-    bleSendError("bad json");
+    char why[BLE_ERROR_TEXT];
+    snprintf(why, sizeof(why), "команда не разобрана как JSON: %s", err.c_str());
+    bleSendError("bad json", why);
     return;
   }
   bleOnCommand(cmd);
