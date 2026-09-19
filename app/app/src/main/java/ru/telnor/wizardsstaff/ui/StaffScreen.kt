@@ -65,6 +65,7 @@ fun StaffScreen(
     onDisconnect: () -> Unit,
     onSyncTime: () -> Unit,
     onOpenLogs: () -> Unit,
+    onChangePin: () -> Unit,
     onExplainPermission: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -89,6 +90,7 @@ fun StaffScreen(
                     onDisconnect = onDisconnect,
                     onSyncTime = onSyncTime,
                     onOpenLogs = onOpenLogs,
+                    onChangePin = onChangePin,
                 )
                 Spacer(Modifier.height(PosohDimens.spaceL))
                 LogModulesCard()
@@ -312,6 +314,7 @@ private fun ConnectedCard(
     onDisconnect: () -> Unit,
     onSyncTime: () -> Unit,
     onOpenLogs: () -> Unit,
+    onChangePin: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
     Spacer(Modifier.height(PosohDimens.spaceXxxl))
@@ -364,6 +367,14 @@ private fun ConnectedCard(
                 StaffFact("СОСТОЯНИЕ", if (armed != null) "взведён ${armed.formula}" else "покой")
                 StaffFact("ПРОШИВКА", firmware ?: "—")
                 Spacer(Modifier.weight(1f))
+                OutlinedButton(
+                    onClick = onChangePin,
+                    shape = RoundedCornerShape(22.dp),
+                    modifier = Modifier.height(44.dp),
+                ) {
+                    Text("PIN")
+                }
+                Spacer(Modifier.width(PosohDimens.spaceS))
                 OutlinedButton(
                     onClick = onOpenLogs,
                     shape = RoundedCornerShape(22.dp),
@@ -449,6 +460,7 @@ private fun LogModulesCard() {
             ModuleRow("HISTORY", "история бросков во флеш: сколько записей, выдача на планшет")
             ModuleRow("ID", "постоянный номер посоха")
             ModuleRow("BLE", "связь с планшетом: подключение, команды, разбор JSON")
+            ModuleRow("AUTH", "вход по PIN: сокращённые сведения, промахи, паузы при подборе")
             ModuleRow("DICE", "кости по кнопкам и самопроверка генератора случайных чисел")
             ModuleRow("STRIKE", "датчик удара: сколько переключений поймано и засчитан ли удар")
             ModuleRow("CHARGE", "взвод посоха: на что взведён, когда снят")

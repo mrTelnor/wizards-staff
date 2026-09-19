@@ -37,7 +37,17 @@ sealed interface StaffEvent {
         val dice: List<Int>,
         val staffTime: Long,
         val armSeconds: Int,
+        /** Задан ли на посохе PIN. Если нет, посох отвечает всем подряд. */
+        val pinSet: Boolean,
+        /** Открыт ли вход в этом сеансе связи. */
+        val authed: Boolean,
     ) : StaffEvent
+
+    /**
+     * Итог попытки входа. waitSeconds — сколько ещё секунд посох не принимает попытки:
+     * он считает промахи и после каждого третьего берёт паузу. Ноль значит «пробуй сейчас».
+     */
+    data class Auth(val ok: Boolean, val waitSeconds: Int) : StaffEvent
 
     /** Чего посох сейчас ждёт: покой или взведён на такой-то бросок. */
     data class State(val armed: Boolean, val count: Int, val sides: Int) : StaffEvent
@@ -89,6 +99,10 @@ fun parseStaffEvent(line: String): StaffEvent? {
                 dice = dice,
                 staffTime = json.optLong("ts"),
                 armSeconds = json.optInt("arm"),
+                // До входа посох отдаёт сведения сокращённо: этих двух полей хватает,
+                // чтобы понять, нужен ли PIN и не открыт ли вход уже.
+                pinSet = json.optBoolean("pinset"),
+                authed = json.optBoolean("authed"),
             )
         }
 
@@ -96,6 +110,8 @@ fun parseStaffEvent(line: String): StaffEvent? {
             val armed = json.optString("st") == "armed"
             StaffEvent.State(armed, json.optInt("n", 1), json.optInt("d", 20))
         }
+
+        "auth" -> StaffEvent.Auth(json.optBoolean("ok"), json.optInt("wait"))
 
         "log" -> StaffEvent.Log(json.optString("msg"))
         "err" -> StaffEvent.Error(json.optString("msg"))
@@ -118,4 +134,14 @@ object StaffCommand {
 
     /** Выставить часы посоха по времени планшета, секунды UTC. */
     fun time(epochSeconds: Long): String = """{"cmd":"time","epoch":$epochSeconds}"""
+
+    /**
+     * Вход по PIN. Пока он не назван, посох отвечает только сокращённым info,
+     * а через десять секунд разрывает связь сам.
+     */
+    fun auth(pin: String): String = """{"cmd":"auth","pin":"$pin"}"""
+
+    /** Смена PIN. Старый обязателен, даже когда вход уже открыт. */
+    fun changePin(oldPin: String, newPin: String): String =
+        """{"cmd":"pin","old":"$oldPin","new":"$newPin"}"""
 }

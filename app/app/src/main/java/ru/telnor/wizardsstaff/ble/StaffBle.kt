@@ -267,9 +267,12 @@ class StaffBle(context: Context) {
             }
             _connection.value = Connection.Connected
             writeLog(LogDirection.System, "посох на связи")
+            // Спрашиваем сведения и на этом останавливаемся. Пока посох не впустил по PIN,
+            // он отвечает только на эту команду, а всё остальное отвергает и через десять
+            // секунд рвёт связь. Что делать дальше — решает StaffViewModel по ответу:
+            // назвать сохранённый PIN, спросить его у человека или сразу подвести часы,
+            // если посох без защиты.
             send(StaffCommand.info())
-            // Часы посоха сразу подводим по планшету: иначе у бросков не будет времени.
-            send(StaffCommand.time(System.currentTimeMillis() / 1000))
         }
 
         override fun onCharacteristicChanged(

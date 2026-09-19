@@ -56,6 +56,27 @@ data class RollRecord(
 /** Сколько строк журнала держим в памяти: дальше старые вытесняются. */
 private const val MAX_LOG_LINES = 2000
 
+/**
+ * Что происходит с входом на посох. Посох с PIN до входа отвечает только сокращёнными
+ * сведениями, а через десять секунд молчания разрывает связь сам.
+ */
+sealed interface AuthState {
+    /** Посох ещё не ответил на сведения: непонятно, нужен ли PIN. */
+    data object Unknown : AuthState
+
+    /** PIN на посохе не задан, входить некуда. */
+    data object NotNeeded : AuthState
+
+    /**
+     * Нужен PIN. wrong — посох отверг тот, что мы назвали; waitSeconds — сколько
+     * он ещё не будет принимать попытки, потому что счёл это подбором.
+     */
+    data class NeedPin(val wrong: Boolean = false, val waitSeconds: Int = 0) : AuthState
+
+    /** Вход открыт, посох принимает все команды. */
+    data object Open : AuthState
+}
+
 /** Взвод: какой бросок сделает следующий удар об пол. */
 data class ArmedState(val count: Int, val sides: Int) {
     val formula: String get() = "${count}d$sides"
@@ -99,6 +120,44 @@ class StaffViewModel(application: Application) : AndroidViewModel(application) {
     private val _clockSkew = MutableStateFlow<Long?>(null)
     val clockSkew: StateFlow<Long?> = _clockSkew.asStateFlow()
 
+    // ---------- вход по PIN ----------
+
+    private val pins = PinStore(application)
+
+    private val _auth = MutableStateFlow<AuthState>(AuthState.Unknown)
+    val auth: StateFlow<AuthState> = _auth.asStateFlow()
+
+    /** Открыто ли окно ввода PIN. Отдельно от состояния: окно можно закрыть, не входя. */
+    private val _pinPrompt = MutableStateFlow(false)
+    val pinPrompt: StateFlow<Boolean> = _pinPrompt.asStateFlow()
+
+    /** Чем кончилась смена PIN. Показывается человеку и сбрасывается. */
+    private val _pinChangeResult = MutableStateFlow<String?>(null)
+    val pinChangeResult: StateFlow<String?> = _pinChangeResult.asStateFlow()
+
+    /**
+     * PIN, который человек только что набрал руками. Живёт до подтверждения посохом,
+     * и намеренно переживает переподключение: пока его набирают, посох успевает
+     * разорвать связь по таймауту, и набранное должно уйти в следующий же сеанс.
+     */
+    private var pendingPin: String? = null
+
+    /** Новый PIN, ожидающий подтверждения командой pin: сохраняем только после «сделано». */
+    private var pendingNewPin: String? = null
+
+    /** Окно закрыли, не назвав PIN: не открывать его снова само на каждом переподключении. */
+    private var pinPromptDismissed = false
+
+    // Чем кончилась прошлая попытка входа. Держим отдельно от AuthState, потому что тот
+    // обнуляется при каждом разрыве связи, а посох разрывает её каждые десять секунд.
+    // Без этого сообщение «неверный PIN, ждать 60 с» пропадало бы через мгновение после
+    // того, как человек его прочитал, — ровно когда оно нужнее всего.
+    private var lastPinWrong = false
+    private var lastPinWait = 0
+
+    /** Часы и полные сведения запрашиваются один раз за сеанс, иначе получился бы круг. */
+    private var doorOpened = false
+
     // Каждое новое подключение — новый сеанс. Посох после перезагрузки нумерует броски
     // заново с единицы, и без этого счётчика свежий бросок №1 выглядел бы повтором старого
     // и не попадал бы в ленту.
@@ -112,7 +171,13 @@ class StaffViewModel(application: Application) : AndroidViewModel(application) {
             var wasConnected = false
             ble.connection.collect { state ->
                 val connected = state == Connection.Connected
-                if (connected && !wasConnected) session++
+                if (connected != wasConnected) {
+                    if (connected) session++
+                    // Дверь закрывается вместе со связью: посох забывает вход при разрыве,
+                    // и в новом сеансе PIN придётся назвать заново.
+                    doorOpened = false
+                    _auth.value = AuthState.Unknown
+                }
                 wasConnected = connected
             }
         }
@@ -149,26 +214,163 @@ class StaffViewModel(application: Application) : AndroidViewModel(application) {
             is StaffEvent.Battery -> _batteryPercent.value = event.percent
 
             is StaffEvent.Info -> {
+                // Посох с PIN до входа отдаёт сведения сокращённо: костей, ёмкости истории
+                // и своего времени там нет вовсе. Разбирать такой ответ как полный нельзя:
+                // расхождение часов стало бы «минус пятьдесят шесть лет», а список костей
+                // опустел бы. Версия прошивки есть в обоих видах ответа.
+                val short = event.pinSet && !event.authed
                 _firmware.value = event.firmware
-                if (event.dice.isNotEmpty()) _dice.value = event.dice
-                if (event.armSeconds > 0) _armSeconds.value = event.armSeconds
-                _clockSkew.value = if (event.staffTime > 0) {
-                    event.staffTime - System.currentTimeMillis() / 1000
-                } else {
-                    null   // часы посоха не выставлены, сравнивать не с чем
+                if (!short) {
+                    if (event.dice.isNotEmpty()) _dice.value = event.dice
+                    if (event.armSeconds > 0) _armSeconds.value = event.armSeconds
+                    _clockSkew.value = if (event.staffTime > 0) {
+                        event.staffTime - System.currentTimeMillis() / 1000
+                    } else {
+                        null   // часы посоха не выставлены, сравнивать не с чем
+                    }
                 }
+                afterInfo(event)
             }
 
             is StaffEvent.State ->
                 _armed.value = if (event.armed) ArmedState(event.count, event.sides) else null
 
-            is StaffEvent.Error -> _lastError.value = event.message
-            // Строка монитора посоха и ответ «сделано» ничего не меняют:
-            // в журнале обмена они уже видны как есть.
+            is StaffEvent.Auth -> afterAuth(event)
+
+            is StaffEvent.Error -> {
+                _lastError.value = event.message
+                // Посох отверг смену PIN: новый не сохраняем, говорим человеку почему.
+                if (pendingNewPin != null) {
+                    pendingNewPin = null
+                    _pinChangeResult.value = "Посох отказал: ${event.message}"
+                }
+            }
+
+            is StaffEvent.Ok -> {
+                if (event.command == "pin") {
+                    // Посох подтвердил смену. Только теперь запоминаем новый PIN:
+                    // сохранить раньше значило бы при отказе остаться с чужим.
+                    val address = connectedDevice.value?.address
+                    pendingNewPin?.let { pin -> address?.let { pins.save(it, pin) } }
+                    pendingNewPin = null
+                    _pinChangeResult.value = "PIN изменён"
+                }
+            }
+
+            // Строка монитора посоха ничего не меняет: в журнале обмена она уже видна.
             is StaffEvent.Log -> Unit
-            is StaffEvent.Ok -> Unit
         }
     }
+
+    // ---------- вход по PIN ----------
+
+    /**
+     * Ответ на сведения решает, что делать дальше. Это и есть вся развилка входа:
+     * посох без защиты — идём работать; вход уже открыт — ничего не делаем;
+     * PIN нужен и мы его знаем — называем сами; не знаем — спрашиваем человека.
+     */
+    private fun afterInfo(event: StaffEvent.Info) {
+        if (!event.pinSet) {
+            _auth.value = AuthState.NotNeeded
+            openDoor()
+            return
+        }
+        if (event.authed) {
+            _auth.value = AuthState.Open
+            return
+        }
+        val address = connectedDevice.value?.address
+        val pin = pendingPin ?: address?.let { pins.get(it) }
+        if (pin != null) {
+            ble.send(StaffCommand.auth(pin))
+        } else {
+            _auth.value = AuthState.NeedPin(lastPinWrong, lastPinWait)
+            if (!pinPromptDismissed) _pinPrompt.value = true
+        }
+    }
+
+    /** Посох ответил на попытку входа. */
+    private fun afterAuth(event: StaffEvent.Auth) {
+        val address = connectedDevice.value?.address
+        if (event.ok) {
+            // Запоминаем только то, что посох принял. Сохранять раньше значило бы
+            // держать в планшете заведомо неверный PIN.
+            pendingPin?.let { pin -> address?.let { pins.save(it, pin) } }
+            pendingPin = null
+            lastPinWrong = false
+            lastPinWait = 0
+            pinPromptDismissed = false
+            _pinPrompt.value = false
+            _auth.value = AuthState.Open
+            openDoor()
+            return
+        }
+
+        // Не приняли. Сохранённый забываем: иначе приложение будет долбить им посох
+        // при каждом переподключении и само наберёт промахов на часовую паузу.
+        pendingPin = null
+        address?.let { pins.forget(it) }
+        lastPinWrong = true
+        // Секунды — снимок на момент отказа, вживую они не тикают. Это честно: число
+        // приходит от посоха и может только уменьшаться, а обещать точный отсчёт,
+        // когда связь рвётся каждые десять секунд, значило бы врать.
+        lastPinWait = event.waitSeconds
+        _auth.value = AuthState.NeedPin(wrong = true, waitSeconds = event.waitSeconds)
+        if (!pinPromptDismissed) _pinPrompt.value = true
+    }
+
+    /**
+     * Дверь открыта: подводим часы и переспрашиваем сведения, потому что до входа
+     * они приходили сокращёнными. Один раз за сеанс — иначе ответ на эти же сведения
+     * снова привёл бы сюда, и приложение закружилось бы.
+     */
+    private fun openDoor() {
+        if (doorOpened) return
+        doorOpened = true
+        ble.send(StaffCommand.time(System.currentTimeMillis() / 1000))
+        ble.send(StaffCommand.info())
+    }
+
+    /** Человек набрал PIN в окне. */
+    fun submitPin(pin: String) {
+        pendingPin = pin
+        // Пробуем заново: прошлый отказ больше не показываем, иначе окно врало бы
+        // про неверный PIN ещё до того, как посох ответит про новый.
+        lastPinWrong = false
+        lastPinWait = 0
+        _pinPrompt.value = false
+        pinPromptDismissed = false
+        // Если связи сейчас нет, посылать некуда: посох сам переподключится через
+        // считаные секунды, и набранный PIN уйдёт в ответ на его сведения.
+        if (connection.value == Connection.Connected) ble.send(StaffCommand.auth(pin))
+    }
+
+    /** Окно ввода закрыли, не назвав PIN. Само оно больше не откроется. */
+    fun dismissPinPrompt() {
+        _pinPrompt.value = false
+        pinPromptDismissed = true
+    }
+
+    /** Открыть окно ввода по кнопке. */
+    fun showPinPrompt() {
+        pinPromptDismissed = false
+        _pinPrompt.value = true
+    }
+
+    /** Сменить PIN посоха. Старый обязателен, его проверяет сам посох. */
+    fun changePin(oldPin: String, newPin: String) {
+        pendingNewPin = newPin
+        _pinChangeResult.value = null
+        ble.send(StaffCommand.changePin(oldPin, newPin))
+    }
+
+    /** Убрать показанный итог смены PIN. */
+    fun clearPinChangeResult() {
+        _pinChangeResult.value = null
+    }
+
+    /** PIN этого посоха, сохранённый в планшете. Нужен, чтобы подставить его в поле «старый». */
+    fun savedPin(): String? = connectedDevice.value?.address?.let { pins.get(it) }
 
     // ---------- связь ----------
 
@@ -187,6 +389,12 @@ class StaffViewModel(application: Application) : AndroidViewModel(application) {
         _armSeconds.value = 0
         _armed.value = null
         _clockSkew.value = null
+        _auth.value = AuthState.Unknown
+        _pinPrompt.value = false
+        pendingPin = null
+        pinPromptDismissed = false
+        lastPinWrong = false
+        lastPinWait = 0
     }
 
     /** Отправляет посоху строку как есть: экран логов позволяет писать команды руками. */

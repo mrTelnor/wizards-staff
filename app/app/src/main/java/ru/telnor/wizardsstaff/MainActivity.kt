@@ -49,8 +49,10 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import ru.telnor.wizardsstaff.ble.Connection
+import ru.telnor.wizardsstaff.ui.ChangePinDialog
 import ru.telnor.wizardsstaff.ui.LogScreen
 import ru.telnor.wizardsstaff.ui.PermissionDialog
+import ru.telnor.wizardsstaff.ui.PinPromptDialog
 import ru.telnor.wizardsstaff.ui.RollsScreen
 import ru.telnor.wizardsstaff.ui.StaffIcons
 import ru.telnor.wizardsstaff.ui.StaffScreen
@@ -107,11 +109,15 @@ private fun AppFrame(viewModel: StaffViewModel = viewModel()) {
     var showLogs by rememberSaveable { mutableStateOf(false) }
     var showPermissionDialog by rememberSaveable { mutableStateOf(false) }
     var showBluetoothOffDialog by rememberSaveable { mutableStateOf(false) }
+    var showChangePinDialog by rememberSaveable { mutableStateOf(false) }
 
     val connection by viewModel.connection.collectAsState()
     val devices by viewModel.devices.collectAsState()
     val scanFinished by viewModel.scanFinished.collectAsState()
     val connectedDevice by viewModel.connectedDevice.collectAsState()
+    val authState by viewModel.auth.collectAsState()
+    val pinPrompt by viewModel.pinPrompt.collectAsState()
+    val pinChangeResult by viewModel.pinChangeResult.collectAsState()
     val rolls by viewModel.rolls.collectAsState()
     val battery by viewModel.batteryPercent.collectAsState()
     val firmware by viewModel.firmware.collectAsState()
@@ -232,6 +238,7 @@ private fun AppFrame(viewModel: StaffViewModel = viewModel()) {
                         onDisconnect = viewModel::disconnect,
                         onSyncTime = viewModel::syncTime,
                         onOpenLogs = { showLogs = true },
+                        onChangePin = { showChangePinDialog = true },
                         onExplainPermission = { showPermissionDialog = true },
                     )
 
@@ -259,6 +266,30 @@ private fun AppFrame(viewModel: StaffViewModel = viewModel()) {
                 permissionLauncher.launch(blePermissions)
             },
             onDismiss = { showPermissionDialog = false },
+        )
+    }
+
+    // Окно ввода PIN живёт на уровне каркаса, а не экрана «Посох»: посох требует вход
+    // независимо от того, какой раздел сейчас открыт, и спрашивать надо там же, где человек.
+    if (pinPrompt) {
+        val state = authState
+        PinPromptDialog(
+            wrong = state is AuthState.NeedPin && state.wrong,
+            waitSeconds = (state as? AuthState.NeedPin)?.waitSeconds ?: 0,
+            onSubmit = viewModel::submitPin,
+            onDismiss = viewModel::dismissPinPrompt,
+        )
+    }
+
+    if (showChangePinDialog) {
+        ChangePinDialog(
+            savedPin = viewModel.savedPin(),
+            result = pinChangeResult,
+            onChange = viewModel::changePin,
+            onDismiss = {
+                showChangePinDialog = false
+                viewModel.clearPinChangeResult()
+            },
         )
     }
 
