@@ -220,6 +220,8 @@ private fun AppFrame(viewModel: StaffViewModel = viewModel()) {
                         onArm = viewModel::arm,
                         onDisarm = viewModel::disarm,
                         onToggleDiscarded = viewModel::toggleDiscarded,
+                        onSaveNote = viewModel::setNote,
+                        onLoadMore = viewModel::loadMoreRolls,
                         onGoToStaff = { section = Section.Staff },
                     )
 

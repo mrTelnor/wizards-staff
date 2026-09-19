@@ -49,6 +49,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -58,7 +62,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ru.telnor.wizardsstaff.ArmedState
-import ru.telnor.wizardsstaff.RollRecord
+import ru.telnor.wizardsstaff.db.RollRecord
 import ru.telnor.wizardsstaff.ble.Connection
 import ru.telnor.wizardsstaff.ui.theme.PosohDimens
 import ru.telnor.wizardsstaff.ui.theme.PosohTheme
@@ -90,6 +94,14 @@ private val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
 
 private fun formatTime(millis: Long): String = timeFormat.format(Date(millis))
 
+/**
+ * Время броска для показа. Посох знает своё время только когда у него выставлены часы;
+ * если нет, берём время получения планшетом и честно помечаем звёздочкой, чтобы
+ * «19:05» не выглядело замером, которого никто не делал.
+ */
+private fun rollTime(roll: RollRecord): String =
+    if (roll.staffTimeKnown) formatTime(roll.shownAt) else formatTime(roll.receivedAt) + "*"
+
 @Composable
 fun RollsScreen(
     rolls: List<RollRecord>,
@@ -100,9 +112,26 @@ fun RollsScreen(
     onArm: (Int, Int) -> Unit,
     onDisarm: () -> Unit,
     onToggleDiscarded: (String) -> Unit,
+    onSaveNote: (String, String?) -> Unit,
+    onLoadMore: () -> Unit,
     onGoToStaff: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // Какому броску сейчас пишут подпись. Окно живёт тут, а не в каркасе приложения:
+    // подпись имеет смысл только на этом экране, и таскать состояние наружу незачем.
+    var noteTarget by remember { mutableStateOf<RollRecord?>(null) }
+
+    noteTarget?.let { target ->
+        NoteDialog(
+            roll = target,
+            onSave = { text ->
+                onSaveNote(target.key, text)
+                noteTarget = null
+            },
+            onDismiss = { noteTarget = null },
+        )
+    }
+
     BoxWithConstraints(modifier.fillMaxSize()) {
         if (maxWidth >= TwoColumnWidth) {
             Row(Modifier.fillMaxSize().padding(PosohDimens.screenPadding)) {
@@ -136,8 +165,12 @@ fun RollsScreen(
                                 FeedCard(
                                     roll = roll,
                                     newest = roll.key == rolls.first().key,
+                                    onLongClick = { noteTarget = roll },
                                     modifier = Modifier.animateItem(),
                                 )
+                                if (roll.key == rolls.last().key) {
+                                    LaunchedEffect(roll.key) { onLoadMore() }
+                                }
                             }
                         }
                     }
@@ -162,8 +195,13 @@ fun RollsScreen(
                         FeedCard(
                             roll = roll,
                             newest = roll.key == rolls.first().key,
+                            onLongClick = { noteTarget = roll },
                             modifier = Modifier.animateItem(),
                         )
+                        // Домотали до последней карточки - просим следующую сотню.
+                        if (roll.key == rolls.last().key) {
+                            LaunchedEffect(roll.key) { onLoadMore() }
+                        }
                     }
                 }
             }
@@ -202,8 +240,8 @@ private fun FeedHeader(rolls: List<RollRecord>) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (rolls.isNotEmpty()) {
-            val from = formatTime(rolls.last().receivedAt)
-            val to = formatTime(rolls.first().receivedAt)
+            val from = formatTime(rolls.last().shownAt)
+            val to = formatTime(rolls.first().shownAt)
             Text(
                 text = if (from == to) "сегодня, $to" else "сегодня, $from — $to",
                 style = MaterialTheme.typography.bodySmall,
@@ -275,7 +313,7 @@ private fun LastRollCard(roll: RollRecord?, onToggleDiscarded: (String) -> Unit)
                 }
                 if (roll != null) {
                     Text(
-                        text = formatTime(roll.receivedAt),
+                        text = rollTime(roll),
                         style = MaterialTheme.typography.bodySmall,
                         color = content.copy(alpha = 0.75f),
                     )
@@ -718,7 +756,12 @@ private fun FormulaChip(formula: String, contentColor: Color) {
  * строка слагаемых длинная и должна переноситься, а не обрезаться.
  */
 @Composable
-private fun FeedCard(roll: RollRecord, newest: Boolean, modifier: Modifier = Modifier) {
+private fun FeedCard(
+    roll: RollRecord,
+    newest: Boolean,
+    onLongClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val scheme = MaterialTheme.colorScheme
     val extra = PosohTheme.extraColors
 
@@ -751,7 +794,11 @@ private fun FeedCard(roll: RollRecord, newest: Boolean, modifier: Modifier = Mod
         shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = background, contentColor = content),
         border = BorderStroke(borderWidth, border),
-        modifier = modifier.fillMaxWidth(),
+        // Долгое нажатие вместо кнопки: подпись нужна не каждому броску, а лишняя
+        // иконка на каждой карточке засоряла бы ленту, ради которой сюда и смотрят.
+        modifier = modifier
+            .fillMaxWidth()
+            .combinedClickable(onClick = {}, onLongClick = onLongClick),
     ) {
         Row(
             modifier = Modifier
@@ -794,15 +841,62 @@ private fun FeedCard(roll: RollRecord, newest: Boolean, modifier: Modifier = Mod
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+                roll.note?.let { note ->
+                    Text(
+                        text = note,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
             Text(
-                text = formatTime(roll.receivedAt),
+                text = rollTime(roll),
                 style = MaterialTheme.typography.bodySmall,
                 color = content.copy(alpha = 0.7f),
                 maxLines = 1,
             )
         }
     }
+}
+
+/**
+ * Подпись к броску: «атака по гоблину». Открывается долгим нажатием на карточку.
+ * Пустая строка стирает подпись — отдельной кнопки «убрать» не нужно.
+ */
+@Composable
+private fun NoteDialog(roll: RollRecord, onSave: (String?) -> Unit, onDismiss: () -> Unit) {
+    var text by remember(roll.key) { mutableStateOf(roll.note.orEmpty()) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Подпись к броску") },
+        text = {
+            Column {
+                Text(
+                    text = "${roll.formula} = ${roll.total}" +
+                        if (roll.breakdown.isNotEmpty()) " (${roll.breakdown})" else "",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(PosohDimens.spaceL))
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Зачем бросали") },
+                    placeholder = { Text("атака по гоблину") },
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(text) }) { Text("Сохранить") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Отмена") }
+        },
+    )
 }
 
 /** Бросков ещё нет. */

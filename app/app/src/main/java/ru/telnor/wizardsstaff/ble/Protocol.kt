@@ -33,6 +33,10 @@ sealed interface StaffEvent {
      */
     data class Info(
         val firmware: String,
+        /** Постоянный номер посоха. Вместе с номером броска даёт ключ записи в базе. */
+        val staffId: Long,
+        /** Адрес BLE. Тот же, что виден при поиске. */
+        val mac: String,
         val historySize: Int,
         val dice: List<Int>,
         val staffTime: Long,
@@ -54,6 +58,17 @@ sealed interface StaffEvent {
 
     /** Посох не понял команду. */
     data class Error(val message: String) : StaffEvent
+
+    /**
+     * Конец порции истории. Посох отдаёт её не целиком, а по пятьдесят записей:
+     * одно событие броска занимает до 25 мс, и полторы тысячи подряд заморозили бы
+     * его почти на минуту, оставив датчик удара без опроса.
+     *
+     * sent — сколько записей в этой порции, last — номер последней (с ним просят
+     * следующую), more — есть ли что просить. Приходит всегда, даже на пустую порцию:
+     * иначе «всё отдано» не отличить от «ответ ещё не пришёл».
+     */
+    data class HistEnd(val sent: Int, val last: Long, val more: Boolean) : StaffEvent
 
     /** Строка из монитора посоха: срабатывания датчика, спавший взвод. */
     data class Log(val message: String) : StaffEvent
@@ -95,6 +110,10 @@ fun parseStaffEvent(line: String): StaffEvent? {
             }
             StaffEvent.Info(
                 firmware = json.optString("fw"),
+                // Оба поля есть и в сокращённом ответе, до входа по PIN: приложению
+                // надо понимать, какой это посох, ещё до того, как его впустят.
+                staffId = json.optLong("staffId"),
+                mac = json.optString("mac"),
                 historySize = json.optInt("hist"),
                 dice = dice,
                 staffTime = json.optLong("ts"),
@@ -112,6 +131,12 @@ fun parseStaffEvent(line: String): StaffEvent? {
         }
 
         "auth" -> StaffEvent.Auth(json.optBoolean("ok"), json.optInt("wait"))
+
+        "histend" -> StaffEvent.HistEnd(
+            sent = json.optInt("sent"),
+            last = json.optLong("last"),
+            more = json.optBoolean("more"),
+        )
 
         "log" -> StaffEvent.Log(json.optString("msg"))
         "err" -> StaffEvent.Error(json.optString("msg"))
@@ -140,6 +165,12 @@ object StaffCommand {
      * а через десять секунд разрывает связь сам.
      */
     fun auth(pin: String): String = """{"cmd":"auth","pin":"$pin"}"""
+
+    /**
+     * Просит броски с номером больше after. Посох отдаст до пятидесяти штук и закончит
+     * событием histend; если в нём more, команду надо повторить с новым after.
+     */
+    fun hist(after: Long): String = """{"cmd":"hist","after":$after}"""
 
     /** Смена PIN. Старый обязателен, даже когда вход уже открыт. */
     fun changePin(oldPin: String, newPin: String): String =

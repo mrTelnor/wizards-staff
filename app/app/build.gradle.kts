@@ -2,6 +2,15 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.room)
+}
+
+// Схема базы выгружается в JSON и кладётся в git. Это слепок таблиц на каждую версию:
+// по нему Room проверяет миграции, а человек видит, что именно поменялось. Без выгрузки
+// первая же миграция превратилась бы в гадание, а терять базу с бросками за год игр
+// не хочется. Решение от 2026-09-19.
+room {
+    schemaDirectory("$projectDir/schemas")
 }
 
 android {

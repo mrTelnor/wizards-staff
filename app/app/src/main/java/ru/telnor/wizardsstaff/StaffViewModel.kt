@@ -6,6 +6,13 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.stateIn
+import ru.telnor.wizardsstaff.db.RollKey
+import ru.telnor.wizardsstaff.db.RollRecord
+import ru.telnor.wizardsstaff.db.RollRepository
 import kotlinx.coroutines.launch
 import ru.telnor.wizardsstaff.ble.Connection
 import ru.telnor.wizardsstaff.ble.FoundDevice
@@ -23,38 +30,11 @@ import ru.telnor.wizardsstaff.ble.StaffEvent
  * пропущенных бросков с посоха.
  */
 
-/** Один бросок в ленте. */
-data class RollRecord(
-    /** Номер броска в посохе. После перезагрузки посоха нумерация начинается заново. */
-    val id: Long,
-    /** Номер сеанса связи: вместе с id даёт ключ, уникальный в пределах работы приложения. */
-    val session: Int,
-    val count: Int,
-    val sides: Int,
-    val values: List<Int>,
-    val total: Int,
-    /** Время планшета в момент получения: часы посоха могут быть не выставлены. */
-    val receivedAt: Long,
-    val discarded: Boolean = false,
-) {
-    /** Чем этот бросок отличается от всех прочих в ленте. */
-    val key: String get() = "$session-$id"
-
-    /** Формула броска: 1d20, 3d6. */
-    val formula: String get() = "${count}d$sides"
-
-    /** Слагаемые: «2 + 4 + 5». У одной кости слагаемых нет. */
-    val breakdown: String get() = if (values.size > 1) values.joinToString(" + ") else ""
-
-    /** Критический успех считается только по натуральной двадцатке на одном d20. */
-    val critSuccess: Boolean get() = count == 1 && sides == 20 && values.firstOrNull() == 20
-
-    /** Критический провал — натуральная единица там же. */
-    val critFail: Boolean get() = count == 1 && sides == 20 && values.firstOrNull() == 1
-}
-
 /** Сколько строк журнала держим в памяти: дальше старые вытесняются. */
 private const val MAX_LOG_LINES = 2000
+
+/** На сколько бросков за раз растёт лента, когда домотали до конца. */
+private const val ROLLS_PAGE = 100
 
 /**
  * Что происходит с входом на посох. Посох с PIN до входа отвечает только сокращёнными
@@ -82,6 +62,10 @@ data class ArmedState(val count: Int, val sides: Int) {
     val formula: String get() = "${count}d$sides"
 }
 
+// flatMapLatest помечен как экспериментальный уже несколько лет и используется повсеместно.
+// Здесь он нужен ровно затем, чтобы при росте ленты старый запрос к базе отменялся,
+// а не висел рядом с новым.
+@OptIn(ExperimentalCoroutinesApi::class)
 class StaffViewModel(application: Application) : AndroidViewModel(application) {
 
     private val ble = StaffBle(application)
@@ -91,8 +75,37 @@ class StaffViewModel(application: Application) : AndroidViewModel(application) {
     val scanFinished: StateFlow<Boolean> = ble.scanFinished
     val connectedDevice: StateFlow<FoundDevice?> = ble.connectedDevice
 
-    private val _rolls = MutableStateFlow<List<RollRecord>>(emptyList())
-    val rolls: StateFlow<List<RollRecord>> = _rolls.asStateFlow()
+    // ---------- лента ----------
+
+    private val rollsRepo = RollRepository(application)
+
+    /**
+     * Сколько бросков показывать. Растёт по сотне, когда человек домотал до конца:
+     * за год игр их накопятся тысячи, и тянуть всё разом в память незачем.
+     */
+    private val rollsLimit = MutableStateFlow(ROLLS_PAGE)
+
+    /**
+     * Лента из базы. Это поток: записали бросок — список обновился сам, руками
+     * его больше никто не трогает.
+     */
+    val rolls: StateFlow<List<RollRecord>> = rollsLimit
+        .flatMapLatest { limit -> rollsRepo.recent(limit) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** Сколько бросков в базе всего: по нему видно, есть ли что подгружать. */
+    val rollsTotal: StateFlow<Int> = rollsRepo.total()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    /** Номер и адрес подключённого посоха: без них бросок не записать, ключ составной. */
+    private var staffId = 0L
+    private var staffMac = ""
+
+    // Догрузка истории. Посох копит броски, пока планшета нет, и отдаёт их порциями
+    // по пятьдесят. Спрашиваем один раз за сеанс связи, дальше идём по его подсказкам.
+    private var historyAsked = false     // в этом сеансе уже спрашивали
+    private var historyCursor = 0L       // с каким after отправлена последняя команда
+    private var historyGot = 0           // сколько записей пришло за эту догрузку
 
     private val _batteryPercent = MutableStateFlow<Int?>(null)
     val batteryPercent: StateFlow<Int?> = _batteryPercent.asStateFlow()
@@ -158,10 +171,6 @@ class StaffViewModel(application: Application) : AndroidViewModel(application) {
     /** Часы и полные сведения запрашиваются один раз за сеанс, иначе получился бы круг. */
     private var doorOpened = false
 
-    // Каждое новое подключение — новый сеанс. Посох после перезагрузки нумерует броски
-    // заново с единицы, и без этого счётчика свежий бросок №1 выглядел бы повтором старого
-    // и не попадал бы в ленту.
-    private var session = 0
 
     init {
         viewModelScope.launch {
@@ -172,10 +181,11 @@ class StaffViewModel(application: Application) : AndroidViewModel(application) {
             ble.connection.collect { state ->
                 val connected = state == Connection.Connected
                 if (connected != wasConnected) {
-                    if (connected) session++
                     // Дверь закрывается вместе со связью: посох забывает вход при разрыве,
                     // и в новом сеансе PIN придётся назвать заново.
                     doorOpened = false
+                    historyAsked = false
+                    historyGot = 0
                     // «Нужен PIN» при этом не забываем. Закрытый посох рвёт связь каждые
                     // десять секунд, и если сбрасывать это состояние на каждом разрыве,
                     // экран замигает между карточкой посоха и списком поиска.
@@ -198,19 +208,10 @@ class StaffViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun onEvent(event: StaffEvent) {
         when (event) {
-            is StaffEvent.Roll -> {
-                val record = RollRecord(
-                    id = event.id,
-                    session = session,
-                    count = event.count,
-                    sides = event.sides,
-                    values = event.values,
-                    total = event.total,
-                    receivedAt = System.currentTimeMillis(),
-                )
-                // Посох может прислать один бросок дважды: дубли отсеиваем в пределах сеанса.
-                if (_rolls.value.none { it.key == record.key }) {
-                    _rolls.value = listOf(record) + _rolls.value
+            is StaffEvent.Roll -> viewModelScope.launch {
+                // Повторы отсеивает сама база: ключ составной, вставка их молча пропускает.
+                if (!rollsRepo.add(event, staffId, staffMac)) {
+                    logNote("бросок №${event.id} не записан: посох ещё не назвал свой номер")
                 }
             }
 
@@ -223,6 +224,10 @@ class StaffViewModel(application: Application) : AndroidViewModel(application) {
                 // опустел бы. Версия прошивки есть в обоих видах ответа.
                 val short = event.pinSet && !event.authed
                 _firmware.value = event.firmware
+                // Номер посоха приходит и в сокращённом ответе. Запоминаем сразу:
+                // без него бросок некуда записать, ключ в базе составной.
+                if (event.staffId != 0L) staffId = event.staffId
+                if (event.mac.isNotEmpty()) staffMac = event.mac
                 if (!short) {
                     if (event.dice.isNotEmpty()) _dice.value = event.dice
                     if (event.armSeconds > 0) _armSeconds.value = event.armSeconds
@@ -239,6 +244,8 @@ class StaffViewModel(application: Application) : AndroidViewModel(application) {
                 _armed.value = if (event.armed) ArmedState(event.count, event.sides) else null
 
             is StaffEvent.Auth -> afterAuth(event)
+
+            is StaffEvent.HistEnd -> afterHistoryBatch(event)
 
             is StaffEvent.Error -> {
                 _lastError.value = event.message
@@ -332,6 +339,48 @@ class StaffViewModel(application: Application) : AndroidViewModel(application) {
         doorOpened = true
         ble.send(StaffCommand.time(System.currentTimeMillis() / 1000))
         ble.send(StaffCommand.info())
+        askHistory()
+    }
+
+    /**
+     * Просит у посоха всё, что тот накопил без планшета. Отсчёт ведём от самого большого
+     * номера, который уже лежит в базе от этого посоха: то, что до него, у нас и так есть.
+     *
+     * Номер посоха обязателен. Если он ещё не назвался, спрашивать бессмысленно: ответ
+     * некуда будет записать, ключ в базе составной.
+     */
+    private fun askHistory() {
+        val staff = staffId
+        if (historyAsked || staff == 0L) return
+        historyAsked = true
+        viewModelScope.launch {
+            val after = rollsRepo.lastId(staff)
+            historyCursor = after
+            historyGot = 0
+            ble.send(StaffCommand.hist(after))
+        }
+    }
+
+    /**
+     * Порция истории кончилась. Пока посох говорит, что есть ещё, просим следующую.
+     *
+     * Условие `last > historyCursor` — страховка от вечного круга: если посох по ошибке
+     * скажет «есть ещё», не сдвинув номер, приложение иначе будет спрашивать до
+     * разрядки аккумулятора.
+     */
+    private fun afterHistoryBatch(event: StaffEvent.HistEnd) {
+        historyGot += event.sent
+        if (event.more && event.last > historyCursor) {
+            historyCursor = event.last
+            ble.send(StaffCommand.hist(event.last))
+            return
+        }
+        if (event.more) {
+            logNote("посох говорит, что история не кончилась, но номер не сдвинулся: останавливаюсь")
+        } else if (historyGot > 0) {
+            logNote("догружено бросков с посоха: $historyGot")
+        }
+        historyGot = 0
     }
 
     /** Человек набрал PIN в окне. */
@@ -407,6 +456,11 @@ class StaffViewModel(application: Application) : AndroidViewModel(application) {
         ble.send(line)
     }
 
+    /** Пишет заметку приложения в журнал обмена: своего канала у таких сообщений нет. */
+    private fun logNote(text: String) {
+        _logLines.value = _logLines.value + LogLine(System.currentTimeMillis(), LogDirection.System, text)
+    }
+
     /** Чистит журнал обмена. На посохе при этом ничего не меняется. */
     fun clearLog() {
         _logLines.value = emptyList()
@@ -430,9 +484,19 @@ class StaffViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Отмечает бросок как случайный: он остаётся в ленте, но не считается. */
     fun toggleDiscarded(key: String) {
-        _rolls.value = _rolls.value.map {
-            if (it.key == key) it.copy(discarded = !it.discarded) else it
-        }
+        val parsed = RollKey.parse(key) ?: return
+        viewModelScope.launch { rollsRepo.toggleDiscarded(parsed) }
+    }
+
+    /** Подпись к броску: «атака по гоблину». Пустая строка стирает подпись. */
+    fun setNote(key: String, note: String?) {
+        val parsed = RollKey.parse(key) ?: return
+        viewModelScope.launch { rollsRepo.setNote(parsed, note) }
+    }
+
+    /** Домотали до конца ленты: показываем ещё сотню. */
+    fun loadMoreRolls() {
+        if (rollsLimit.value < rollsTotal.value) rollsLimit.value += ROLLS_PAGE
     }
 
     fun clearError() { _lastError.value = null }
