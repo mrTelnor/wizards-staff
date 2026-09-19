@@ -239,6 +239,9 @@ private fun AppFrame(viewModel: StaffViewModel = viewModel()) {
                         onSyncTime = viewModel::syncTime,
                         onOpenLogs = { showLogs = true },
                         onChangePin = { showChangePinDialog = true },
+                        onEnterPin = viewModel::showPinPrompt,
+                        authOpen = authState is AuthState.Open || authState is AuthState.NotNeeded,
+                        pinNeeded = authState is AuthState.NeedPin,
                         onExplainPermission = { showPermissionDialog = true },
                     )
 

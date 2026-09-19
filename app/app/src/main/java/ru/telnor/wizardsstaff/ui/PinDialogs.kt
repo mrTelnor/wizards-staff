@@ -3,9 +3,12 @@ package ru.telnor.wizardsstaff.ui
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -19,6 +22,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.unit.dp
 import ru.telnor.wizardsstaff.ui.theme.PosohDimens
 
 /** Сколько цифр в PIN. Столько же ждёт прошивка, см. PIN_LENGTH в config.h. */
@@ -63,19 +68,12 @@ fun PinPromptDialog(
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Spacer(Modifier.height(PosohDimens.spaceL))
-                OutlinedTextField(
+                PinField(
                     value = pin,
-                    onValueChange = { pin = digitsOnly(it) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
+                    label = "PIN, $PIN_LENGTH цифры",
                     isError = wrong,
-                    label = { Text("PIN, $PIN_LENGTH цифры") },
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.NumberPassword,
-                        imeAction = ImeAction.Done,
-                    ),
-                )
+                    imeAction = ImeAction.Done,
+                ) { pin = it }
             }
         },
         confirmButton = {
@@ -151,14 +149,24 @@ fun ChangePinDialog(
     )
 }
 
-/** Поле под один PIN: цифры, скрытый ввод, ровно нужная длина. */
+/**
+ * Поле под один PIN: только цифры, ровно нужная длина, ввод скрыт точками.
+ *
+ * Глазик справа показывает набранное. Он тут не для красоты: на планшете экранная
+ * клавиатура закрывает пол-экрана, ошибиться в четырёх точках легко, а посох за три
+ * промаха берёт паузу в минуту. Дешевле дать посмотреть, что набрал.
+ *
+ * Видимость своя у каждого поля и сбрасывается вместе с окном: подглядели и закрыли.
+ */
 @Composable
 private fun PinField(
     value: String,
     label: String,
     isError: Boolean = false,
+    imeAction: ImeAction = ImeAction.Next,
     onValueChange: (String) -> Unit,
 ) {
+    var visible by remember { mutableStateOf(false) }
     OutlinedTextField(
         value = value,
         onValueChange = { onValueChange(digitsOnly(it)) },
@@ -166,10 +174,23 @@ private fun PinField(
         singleLine = true,
         isError = isError,
         label = { Text(label) },
-        visualTransformation = PasswordVisualTransformation(),
+        visualTransformation = if (visible) {
+            VisualTransformation.None
+        } else {
+            PasswordVisualTransformation()
+        },
+        trailingIcon = {
+            IconButton(onClick = { visible = !visible }) {
+                Icon(
+                    imageVector = if (visible) StaffIcons.EyeOff else StaffIcons.Eye,
+                    contentDescription = if (visible) "Спрятать PIN" else "Показать PIN",
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+        },
         keyboardOptions = KeyboardOptions(
             keyboardType = KeyboardType.NumberPassword,
-            imeAction = ImeAction.Next,
+            imeAction = imeAction,
         ),
     )
 }

@@ -114,5 +114,18 @@ object StaffIcons {
     val Trash: ImageVector = strokeIcon("M5 7h14", "M9.5 7V4.8h5V7", "m7 7 1 12.2h8L17 7")
 
     /** Логи посоха. */
+    /** Показать набранный PIN. */
+    val Eye: ImageVector = strokeIcon(
+        "M3 12c2.4-3.6 5.4-5.4 9-5.4s6.6 1.8 9 5.4c-2.4 3.6-5.4 5.4-9 5.4S5.4 15.6 3 12z",
+        circle(12f, 12f, 2.6f),
+    )
+
+    /** Спрятать набранный PIN. Тот же глаз, перечёркнутый, как у BluetoothOff. */
+    val EyeOff: ImageVector = strokeIcon(
+        "M3 12c2.4-3.6 5.4-5.4 9-5.4s6.6 1.8 9 5.4c-2.4 3.6-5.4 5.4-9 5.4S5.4 15.6 3 12z",
+        circle(12f, 12f, 2.6f),
+        "M4 20 20 4",
+    )
+
     val Logs: ImageVector = strokeIcon("M5 6h14", "M5 10h14", "M5 14h9", "M5 18h11")
 }

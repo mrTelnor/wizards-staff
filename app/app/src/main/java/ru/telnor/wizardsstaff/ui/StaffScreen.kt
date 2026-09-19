@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -66,6 +67,9 @@ fun StaffScreen(
     onSyncTime: () -> Unit,
     onOpenLogs: () -> Unit,
     onChangePin: () -> Unit,
+    onEnterPin: () -> Unit,
+    authOpen: Boolean,
+    pinNeeded: Boolean,
     onExplainPermission: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -80,17 +84,23 @@ fun StaffScreen(
             modifier = Modifier.width(ContentWidth),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            if (connection == Connection.Connected) {
+            // Карточку держим на экране и в те мгновения, когда связи нет, если посох
+            // просто закрыт и ждёт PIN. Он рвёт связь каждые десять секунд, и без этого
+            // экран мигал бы между карточкой и списком поиска, будто что-то сломалось.
+            if (connection == Connection.Connected || pinNeeded) {
                 ConnectedCard(
                     device = connectedDevice,
                     batteryPercent = batteryPercent,
                     firmware = firmware,
                     armed = armed,
                     clockSkew = clockSkew,
+                    connected = connection == Connection.Connected,
+                    authOpen = authOpen,
                     onDisconnect = onDisconnect,
                     onSyncTime = onSyncTime,
                     onOpenLogs = onOpenLogs,
                     onChangePin = onChangePin,
+                    onEnterPin = onEnterPin,
                 )
                 Spacer(Modifier.height(PosohDimens.spaceL))
                 LogModulesCard()
@@ -311,10 +321,13 @@ private fun ConnectedCard(
     firmware: String?,
     armed: ArmedState?,
     clockSkew: Long?,
+    connected: Boolean,
+    authOpen: Boolean,
     onDisconnect: () -> Unit,
     onSyncTime: () -> Unit,
     onOpenLogs: () -> Unit,
     onChangePin: () -> Unit,
+    onEnterPin: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
     Spacer(Modifier.height(PosohDimens.spaceXxxl))
@@ -360,29 +373,48 @@ private fun ConnectedCard(
             Spacer(Modifier.height(PosohDimens.spaceXl))
 
             Row(
-                horizontalArrangement = Arrangement.spacedBy(PosohDimens.spaceXxl),
+                horizontalArrangement = Arrangement.spacedBy(PosohDimens.spaceXl),
                 verticalAlignment = Alignment.Bottom,
             ) {
                 StaffFact("ЗАРЯД", batteryPercent?.let { "$it %" } ?: "—")
-                StaffFact("СОСТОЯНИЕ", if (armed != null) "взведён ${armed.formula}" else "покой")
+                StaffFact(
+                    "СОСТОЯНИЕ",
+                    when {
+                        !authOpen -> "закрыт"
+                        armed != null -> "взведён ${armed.formula}"
+                        else -> "покой"
+                    },
+                )
                 StaffFact("ПРОШИВКА", firmware ?: "—")
                 Spacer(Modifier.weight(1f))
-                OutlinedButton(
-                    onClick = onChangePin,
-                    shape = RoundedCornerShape(22.dp),
-                    modifier = Modifier.height(44.dp),
+
+                // Кнопки своим рядом с маленьким зазором: в общем ряду между ними вставал
+                // большой отступ фактов, и надпись «Логи» не помещалась, обрезаясь до «Л».
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(PosohDimens.spaceS),
+                    verticalAlignment = Alignment.Bottom,
                 ) {
-                    Text("PIN")
-                }
-                Spacer(Modifier.width(PosohDimens.spaceS))
-                OutlinedButton(
-                    onClick = onOpenLogs,
-                    shape = RoundedCornerShape(22.dp),
-                    modifier = Modifier.height(44.dp),
-                ) {
-                    Icon(StaffIcons.Logs, contentDescription = null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(PosohDimens.spaceS))
-                    Text("Логи")
+                    OutlinedButton(
+                        onClick = if (authOpen) onChangePin else onEnterPin,
+                        shape = RoundedCornerShape(22.dp),
+                        modifier = Modifier.height(44.dp),
+                        // Поля уже стандартных: кнопке нужно только уместить своё слово.
+                        contentPadding = PaddingValues(horizontal = PosohDimens.spaceM),
+                    ) {
+                        // Смысл кнопки следует за состоянием: пока посох закрыт, менять
+                        // PIN всё равно нельзя - он откажет, - а вот ввести его нужно.
+                        Text(if (authOpen) "PIN" else "Ввести PIN")
+                    }
+                    OutlinedButton(
+                        onClick = onOpenLogs,
+                        shape = RoundedCornerShape(22.dp),
+                        modifier = Modifier.height(44.dp),
+                        contentPadding = PaddingValues(horizontal = PosohDimens.spaceM),
+                    ) {
+                        Icon(StaffIcons.Logs, contentDescription = null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(PosohDimens.spaceS))
+                        Text("Логи")
+                    }
                 }
             }
 
@@ -399,7 +431,7 @@ private fun ConnectedCard(
                     )
                     Spacer(Modifier.height(PosohDimens.spaceXs))
                     Text(
-                        text = describeSkew(clockSkew),
+                        text = if (authOpen) describeSkew(clockSkew) else "Посох закрыт: сначала введи PIN",
                         style = MaterialTheme.typography.bodyMedium,
                         color = scheme.onSurfaceVariant,
                     )
@@ -408,6 +440,9 @@ private fun ConnectedCard(
                     onClick = onSyncTime,
                     shape = RoundedCornerShape(22.dp),
                     modifier = Modifier.height(44.dp),
+                    // Пока посох закрыт, он отвергнет команду времени, а пока связь
+                    // в разрыве - её некуда послать. Серая кнопка честнее молчаливого отказа.
+                    enabled = connected && authOpen,
                 ) {
                     Text("Синхронизировать")
                 }

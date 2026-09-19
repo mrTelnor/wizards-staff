@@ -176,7 +176,10 @@ class StaffViewModel(application: Application) : AndroidViewModel(application) {
                     // Дверь закрывается вместе со связью: посох забывает вход при разрыве,
                     // и в новом сеансе PIN придётся назвать заново.
                     doorOpened = false
-                    _auth.value = AuthState.Unknown
+                    // «Нужен PIN» при этом не забываем. Закрытый посох рвёт связь каждые
+                    // десять секунд, и если сбрасывать это состояние на каждом разрыве,
+                    // экран замигает между карточкой посоха и списком поиска.
+                    if (_auth.value !is AuthState.NeedPin) _auth.value = AuthState.Unknown
                 }
                 wasConnected = connected
             }
