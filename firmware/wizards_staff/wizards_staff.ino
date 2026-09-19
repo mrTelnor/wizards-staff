@@ -314,6 +314,17 @@ void bleOnCommand(JsonDocument& cmd) {
       }
       fresh[i] = (uint16_t)v;
     }
+    // Порядок наводим сами, повторы отвергаем: восемь кнопок с двумя одинаковыми
+    // костями смысла не имеют, а выглядят как опечатка в команде.
+    uint16_t twice = diceNormalize(fresh);
+    if (twice) {
+      char why[BLE_ERROR_TEXT];
+      snprintf(why, sizeof(why), "кость d%u задана дважды, все восемь должны быть разными",
+               (unsigned)twice);
+      bleSendError("duplicate dice", why);
+      return;
+    }
+
     memcpy(diceSides, fresh, sizeof(diceSides));
     diceSave();
     char list[64];

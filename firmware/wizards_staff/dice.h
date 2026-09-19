@@ -23,6 +23,25 @@ void diceList(char* out, size_t len) {
   }
 }
 
+// Приводит таблицу костей к порядку: сортирует по возрастанию, чтобы кнопки шли слева
+// направо от меньшей кости к большей и таблица не зависела от того, в каком порядке её
+// прислали. Возвращает 0, если всё хорошо, иначе грань, которая встретилась дважды:
+// две одинаковые кости на разных кнопках смысла не имеют, а выглядят как опечатка.
+uint16_t diceNormalize(uint16_t* sides) {
+  // Сортировка вставками: значений восемь, городить что-то сложнее незачем.
+  for (int i = 1; i < 8; i++) {
+    uint16_t v = sides[i];
+    int j = i - 1;
+    while (j >= 0 && sides[j] > v) { sides[j + 1] = sides[j]; j--; }
+    sides[j + 1] = v;
+  }
+  // После сортировки одинаковые стоят рядом, и хватает одного прохода.
+  for (int i = 1; i < 8; i++) {
+    if (sides[i] == sides[i - 1]) return sides[i];
+  }
+  return 0;
+}
+
 // Читает таблицу костей из флеш. Если её там нет или она битая, берёт значения
 // по умолчанию из config.h. Вызывать один раз в setup().
 void diceLoad() {
@@ -35,15 +54,23 @@ void diceLoad() {
   // а вот испорченная таблица означает порчу данных во флеш и должна бросаться в глаза.
   bool empty = (got == 0);
   bool ok    = (got == sizeof(diceSides));
+  uint16_t twice = 0;
   if (ok) {
     for (int i = 0; i < 8; i++) {
       if (diceSides[i] < 2 || diceSides[i] > DICE_SIDES_MAX) { ok = false; break; }
     }
   }
+  // Повторы во флеш могли остаться от прошивки, которая их ещё не запрещала.
+  // Чиним сами, а не молча живём с негодной таблицей.
+  if (ok) {
+    twice = diceNormalize(diceSides);
+    if (twice) ok = false;
+  }
   if (!ok) {
     memcpy(diceSides, DICE_SIDES_DEFAULT, sizeof(diceSides));
-    if (empty) logLine(LOG_DICE, LOG_INFO, "во флеш ничего нет, это первый запуск, беру значения по умолчанию");
-    else       logLine(LOG_DICE, LOG_WARN, "во флеш мусор, таблица не читается, беру значения по умолчанию");
+    if (empty)      logLine(LOG_DICE, LOG_INFO, "во флеш ничего нет, это первый запуск, беру значения по умолчанию");
+    else if (twice) logLine(LOG_DICE, LOG_WARN, "во флеш кость d%u дважды, беру значения по умолчанию", twice);
+    else            logLine(LOG_DICE, LOG_WARN, "во флеш мусор, таблица не читается, беру значения по умолчанию");
   }
   char list[64];
   diceList(list, sizeof(list));
