@@ -10,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -28,6 +29,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -52,6 +55,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -120,12 +124,14 @@ fun LogScreen(
 
     // Автопрокрутка: пока включена, экран следует за свежими строками. Выключил — журнал
     // стоит на месте, и можно спокойно читать, хотя строки продолжают приходить.
-    // Высота клавиатуры в ключах: когда она выезжает, список становится короче, и без этого
-    // автопрокрутка осталась бы стоять там, где была, показывая уже не последние строки.
-    val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
-    LaunchedEffect(shown.size, autoScroll, imeBottom) {
+    // Клавиатуры в ключах нет: высота журнала от неё больше не зависит, окно не поджимается.
+    LaunchedEffect(shown.size, autoScroll) {
         if (autoScroll && shown.isNotEmpty()) listState.animateScrollToItem(shown.lastIndex)
     }
+
+    // Стоит ли курсор в строке команды. Нужно, чтобы поднимать экран только ради неё:
+    // поиск живёт наверху, клавиатура его не закрывает, и двигать экран из-за него незачем.
+    var commandFocused by remember { mutableStateOf(false) }
 
     // Файл сохраняем через системный выбор места: так не нужно ни одного разрешения,
     // и файл попадает туда, куда решит хозяин планшета.
@@ -145,194 +151,221 @@ fun LogScreen(
         ).show()
     }
 
-    Column(modifier.fillMaxSize().padding(PosohDimens.screenPadding)) {
+    BoxWithConstraints(modifier.fillMaxSize()) {
+        // Высота экрана постоянна: каркас приложения под клавиатуру не поджимается
+        // (imePadding в MainActivity убран намеренно). Клавиатура ложится поверх, а экран
+        // сам поднимает содержимое прокруткой - размеры разметки при этом не меняются.
+        val screenHeight = maxHeight
+        val imeHeight = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
+        val pageScroll = rememberScrollState()
 
-        // ---------- заголовок ----------
-        // В строке заголовка только выбор, что показывать: кнопки узкие и помещаются.
-        // «Сохранить» и «Очистить» вынесены строкой ниже: в портретной ориентации планшета
-        // на одну строку их не хватало, и заголовок начинал переноситься по слогам.
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            IconButton(onClick = onBack, modifier = Modifier.size(PosohDimens.railTouchTarget)) {
-                Icon(StaffIcons.Back, contentDescription = "Назад, в раздел «Посох»")
-            }
-            Spacer(Modifier.width(PosohDimens.spaceS))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    text = "Логи посоха",
-                    style = MaterialTheme.typography.headlineSmall,
-                    maxLines = 1,
-                )
-                Text(
-                    text = if (query.isBlank() && filter == LogFilter.All) {
-                        "строк: ${lines.size}"
-                    } else {
-                        "показано ${shown.size} из ${lines.size}"
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = scheme.onSurfaceVariant,
-                )
-            }
-
-            // Что показывать: выбрано всегда ровно одно из трёх.
-            LogFilter.entries.forEach { item -> LogFilterChip(item, filter == item) { filter = item } }
+        // Встал в строку команды и выехала клавиатура - мотаем в самый низ. Там строка ввода
+        // и быстрые команды, а запас под ними ровно в высоту клавиатуры выводит их прямо
+        // над ней. Убрал клавиатуру - возвращаем экран на место.
+        LaunchedEffect(imeHeight, commandFocused) {
+            if (imeHeight > 0.dp && commandFocused) pageScroll.animateScrollTo(pageScroll.maxValue)
+            else if (imeHeight == 0.dp) pageScroll.animateScrollTo(0)
         }
 
-        Spacer(Modifier.height(PosohDimens.spaceS))
+        Column(Modifier.fillMaxWidth().verticalScroll(pageScroll)) {
+            // Ровно в высоту экрана: отсюда и берётся постоянство размеров. Журнал внутри
+            // делит остаток по weight, и этот остаток от клавиатуры не зависит.
+            Column(Modifier.height(screenHeight).padding(PosohDimens.screenPadding)) {
 
-        // ---------- управление ----------
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            // Тот же стиль, что у надписей внутри TextButton справа. Раньше здесь был
-            // bodyMedium (14sp, обычное начертание) против labelLarge у кнопок (15sp,
-            // полужирное): надписи в одной строке выглядели разными и слегка разъезжались.
-            Text(
-                text = "Автопрокрутка",
-                style = MaterialTheme.typography.labelLarge,
-                color = scheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.width(PosohDimens.spaceS))
-            Switch(checked = autoScroll, onCheckedChange = { autoScroll = it })
-
-            Spacer(Modifier.weight(1f))
-
-            TextButton(onClick = { saveLauncher.launch(defaultFileName()) }) {
-                Icon(StaffIcons.Save, contentDescription = null, Modifier.size(18.dp))
-                Spacer(Modifier.width(PosohDimens.spaceS))
-                Text("Сохранить")
-            }
-            TextButton(onClick = onClear) {
-                Icon(StaffIcons.Trash, contentDescription = null, Modifier.size(18.dp))
-                Spacer(Modifier.width(PosohDimens.spaceS))
-                Text("Очистить")
-            }
-        }
-
-        Spacer(Modifier.height(PosohDimens.spaceM))
-
-        // ---------- поиск ----------
-        OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            shape = MaterialTheme.shapes.small,
-            label = { Text("Поиск по строкам журнала") },
-            leadingIcon = {
-                Icon(StaffIcons.Search, contentDescription = null, Modifier.size(20.dp))
-            },
-            trailingIcon = {
-                if (query.isNotEmpty()) {
-                    IconButton(onClick = { query = "" }) {
-                        Icon(StaffIcons.Close, contentDescription = "Очистить поиск", Modifier.size(18.dp))
+                // ---------- заголовок ----------
+                // В строке заголовка только выбор, что показывать: кнопки узкие и помещаются.
+                // «Сохранить» и «Очистить» вынесены строкой ниже: в портретной ориентации планшета
+                // на одну строку их не хватало, и заголовок начинал переноситься по слогам.
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    IconButton(onClick = onBack, modifier = Modifier.size(PosohDimens.railTouchTarget)) {
+                        Icon(StaffIcons.Back, contentDescription = "Назад, в раздел «Посох»")
                     }
+                    Spacer(Modifier.width(PosohDimens.spaceS))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            text = "Логи посоха",
+                            style = MaterialTheme.typography.headlineSmall,
+                            maxLines = 1,
+                        )
+                        Text(
+                            text = if (query.isBlank() && filter == LogFilter.All) {
+                                "строк: ${lines.size}"
+                            } else {
+                                "показано ${shown.size} из ${lines.size}"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = scheme.onSurfaceVariant,
+                        )
+                    }
+
+                    // Что показывать: выбрано всегда ровно одно из трёх.
+                    LogFilter.entries.forEach { item -> LogFilterChip(item, filter == item) { filter = item } }
                 }
-            },
-        )
 
-        Spacer(Modifier.height(PosohDimens.spaceM))
+                Spacer(Modifier.height(PosohDimens.spaceS))
 
-        // ---------- сам журнал ----------
-        Card(
-            shape = MaterialTheme.shapes.medium,
-            colors = CardDefaults.cardColors(containerColor = scheme.surfaceContainerLowest),
-            border = BorderStroke(1.dp, scheme.outlineVariant),
-            // Касание журнала убирает клавиатуру: иначе закрыть её можно только системным
-            // жестом «назад», а это не очевидно. Прокрутке списка не мешает: сюда приходят
-            // только касания без движения, протяжки забирает LazyColumn.
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .pointerInput(Unit) {
-                    detectTapGestures { focus.clearFocus(); keyboard?.hide() }
-                },
-        ) {
-            if (shown.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                // ---------- управление ----------
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    // Тот же стиль, что у надписей внутри TextButton справа. Раньше здесь был
+                    // bodyMedium (14sp, обычное начертание) против labelLarge у кнопок (15sp,
+                    // полужирное): надписи в одной строке выглядели разными и слегка разъезжались.
                     Text(
-                        text = when {
-                            lines.isEmpty() && !connected ->
-                                "Журнал пуст. Подключись к посоху в разделе «Посох»."
-                            lines.isEmpty() -> "Журнал пуст. Строки появятся сами: заряд приходит раз в 10 секунд."
-                            query.isNotBlank() -> "По запросу ничего не нашлось."
-                            filter == LogFilter.Errors -> "Ошибок и предупреждений нет."
-                            else -> "Нечего показать с этим фильтром. Нажми «Всё»."
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
+                        text = "Автопрокрутка",
+                        style = MaterialTheme.typography.labelLarge,
                         color = scheme.onSurfaceVariant,
                     )
+                    Spacer(Modifier.width(PosohDimens.spaceS))
+                    Switch(checked = autoScroll, onCheckedChange = { autoScroll = it })
+
+                    Spacer(Modifier.weight(1f))
+
+                    TextButton(onClick = { saveLauncher.launch(defaultFileName()) }) {
+                        Icon(StaffIcons.Save, contentDescription = null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(PosohDimens.spaceS))
+                        Text("Сохранить")
+                    }
+                    TextButton(onClick = onClear) {
+                        Icon(StaffIcons.Trash, contentDescription = null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(PosohDimens.spaceS))
+                        Text("Очистить")
+                    }
                 }
-            } else {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize().padding(PosohDimens.spaceM),
+
+                Spacer(Modifier.height(PosohDimens.spaceM))
+
+                // ---------- поиск ----------
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    shape = MaterialTheme.shapes.small,
+                    label = { Text("Поиск по строкам журнала") },
+                    leadingIcon = {
+                        Icon(StaffIcons.Search, contentDescription = null, Modifier.size(20.dp))
+                    },
+                    trailingIcon = {
+                        if (query.isNotEmpty()) {
+                            IconButton(onClick = { query = "" }) {
+                                Icon(StaffIcons.Close, contentDescription = "Очистить поиск", Modifier.size(18.dp))
+                            }
+                        }
+                    },
+                )
+
+                Spacer(Modifier.height(PosohDimens.spaceM))
+
+                // ---------- сам журнал ----------
+                Card(
+                    shape = MaterialTheme.shapes.medium,
+                    colors = CardDefaults.cardColors(containerColor = scheme.surfaceContainerLowest),
+                    border = BorderStroke(1.dp, scheme.outlineVariant),
+                    // Касание журнала убирает клавиатуру: иначе закрыть её можно только системным
+                    // жестом «назад», а это не очевидно. Прокрутке списка не мешает: сюда приходят
+                    // только касания без движения, протяжки забирает LazyColumn.
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .pointerInput(Unit) {
+                            detectTapGestures { focus.clearFocus(); keyboard?.hide() }
+                        },
                 ) {
-                    items(shown, key = { it.at.toString() + it.text.hashCode() }) { line ->
-                        LogRow(line)
+                    if (shown.isEmpty()) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(
+                                text = when {
+                                    lines.isEmpty() && !connected ->
+                                        "Журнал пуст. Подключись к посоху в разделе «Посох»."
+                                    lines.isEmpty() -> "Журнал пуст. Строки появятся сами: заряд приходит раз в 10 секунд."
+                                    query.isNotBlank() -> "По запросу ничего не нашлось."
+                                    filter == LogFilter.Errors -> "Ошибок и предупреждений нет."
+                                    else -> "Нечего показать с этим фильтром. Нажми «Всё»."
+                                },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = scheme.onSurfaceVariant,
+                            )
+                        }
+                    } else {
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.fillMaxSize().padding(PosohDimens.spaceM),
+                        ) {
+                            items(shown, key = { it.at.toString() + it.text.hashCode() }) { line ->
+                                LogRow(line)
+                            }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(PosohDimens.spaceM))
+
+                // ---------- отправка команды ----------
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = command,
+                        onValueChange = { command = it },
+                        modifier = Modifier
+                            .weight(1f)
+                            .onFocusChanged { commandFocused = it.isFocused },
+                        singleLine = true,
+                        enabled = connected,
+                        shape = MaterialTheme.shapes.small,
+                        label = { Text("Команда посоху") },
+                        placeholder = { Text("""{"cmd":"info"}""") },
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                        keyboardActions = KeyboardActions(onSend = {
+                            sendAndHide(command)
+                            command = ""
+                        }),
+                    )
+                    Spacer(Modifier.width(PosohDimens.spaceM))
+                    FilledIconButton(
+                        onClick = {
+                            sendAndHide(command)
+                            command = ""
+                        },
+                        enabled = connected && command.isNotBlank(),
+                        modifier = Modifier.size(52.dp),
+                    ) {
+                        Icon(StaffIcons.Send, contentDescription = "Отправить команду", Modifier.size(22.dp))
+                    }
+                }
+
+                Spacer(Modifier.height(PosohDimens.spaceS))
+
+                // Быстрые команды. Подписи — глаголы по-русски, теми же словами, что в справочнике
+                // «Язык посоха» на экране «Посох»: одно действие не должно называться двумя способами.
+                // Переназначения костей (map) тут нет намеренно: команда редкая и длинная,
+                // её проще взять из справочника. FlowRow вместо Row, чтобы кнопки переносились
+                // сами, когда их станет больше или экран окажется узким.
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(PosohDimens.spaceXs),
+                    verticalArrangement = Arrangement.spacedBy(PosohDimens.spaceXs),
+                ) {
+                    listOf(
+                        "сведения" to """{"cmd":"info"}""",
+                        "взвести 1d20" to """{"cmd":"arm","n":1,"d":20}""",
+                        "снять взвод" to """{"cmd":"disarm"}""",
+                        "бросок 3d6" to """{"cmd":"roll","n":3,"d":6}""",
+                        "история" to """{"cmd":"hist","after":0}""",
+                    ).forEach { (label, text) ->
+                        TextButton(
+                            onClick = { command = text },
+                            enabled = connected,
+                            // Своё поле вместо стандартного: у TextButton по краям 12 dp,
+                            // и пять кнопок подряд расползались вширь.
+                            contentPadding = PaddingValues(
+                                horizontal = PosohDimens.spaceS,
+                                vertical = PosohDimens.spaceXs,
+                            ),
+                        ) { Text(label) }
                     }
                 }
             }
-        }
 
-        Spacer(Modifier.height(PosohDimens.spaceM))
-
-        // ---------- отправка команды ----------
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            OutlinedTextField(
-                value = command,
-                onValueChange = { command = it },
-                modifier = Modifier.weight(1f),
-                singleLine = true,
-                enabled = connected,
-                shape = MaterialTheme.shapes.small,
-                label = { Text("Команда посоху") },
-                placeholder = { Text("""{"cmd":"info"}""") },
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(onSend = {
-                    sendAndHide(command)
-                    command = ""
-                }),
-            )
-            Spacer(Modifier.width(PosohDimens.spaceM))
-            FilledIconButton(
-                onClick = {
-                    sendAndHide(command)
-                    command = ""
-                },
-                enabled = connected && command.isNotBlank(),
-                modifier = Modifier.size(52.dp),
-            ) {
-                Icon(StaffIcons.Send, contentDescription = "Отправить команду", Modifier.size(22.dp))
-            }
-        }
-
-        Spacer(Modifier.height(PosohDimens.spaceS))
-
-        // Быстрые команды. Подписи — глаголы по-русски, теми же словами, что в справочнике
-        // «Язык посоха» на экране «Посох»: одно действие не должно называться двумя способами.
-        // Переназначения костей (map) тут нет намеренно: команда редкая и длинная,
-        // её проще взять из справочника. FlowRow вместо Row, чтобы кнопки переносились
-        // сами, когда их станет больше или экран окажется узким.
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(PosohDimens.spaceXs),
-            verticalArrangement = Arrangement.spacedBy(PosohDimens.spaceXs),
-        ) {
-            listOf(
-                "сведения" to """{"cmd":"info"}""",
-                "взвести 1d20" to """{"cmd":"arm","n":1,"d":20}""",
-                "снять взвод" to """{"cmd":"disarm"}""",
-                "бросок 3d6" to """{"cmd":"roll","n":3,"d":6}""",
-                "история" to """{"cmd":"hist","after":0}""",
-            ).forEach { (label, text) ->
-                TextButton(
-                    onClick = { command = text },
-                    enabled = connected,
-                    // Своё поле вместо стандартного: у TextButton по краям 12 dp,
-                    // и пять кнопок подряд расползались вширь.
-                    contentPadding = PaddingValues(
-                        horizontal = PosohDimens.spaceS,
-                        vertical = PosohDimens.spaceXs,
-                    ),
-                ) { Text(label) }
-            }
+            // Запас, на который поднимается содержимое. Без него мотать было бы некуда:
+            // столбец ровно в экран, прокручивать нечего.
+            Spacer(Modifier.height(imeHeight))
         }
     }
 }

@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -39,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -99,10 +99,14 @@ private fun AppFrame(viewModel: StaffViewModel = viewModel()) {
     val scheme = MaterialTheme.colorScheme
     val context = androidx.compose.ui.platform.LocalContext.current
 
-    var section by remember { mutableStateOf(Section.Rolls) }
-    var showLogs by remember { mutableStateOf(false) }
-    var showPermissionDialog by remember { mutableStateOf(false) }
-    var showBluetoothOffDialog by remember { mutableStateOf(false) }
+    // rememberSaveable, а не remember: при повороте планшета система пересоздаёт активность,
+    // и обычный remember теряет значение. Приложение возвращалось в «Броски», даже если
+    // человек читал логи. Саму связь с посохом поворот не рвёт: она живёт во ViewModel,
+    // а та переживает пересоздание.
+    var section by rememberSaveable { mutableStateOf(Section.Rolls) }
+    var showLogs by rememberSaveable { mutableStateOf(false) }
+    var showPermissionDialog by rememberSaveable { mutableStateOf(false) }
+    var showBluetoothOffDialog by rememberSaveable { mutableStateOf(false) }
 
     val connection by viewModel.connection.collectAsState()
     val devices by viewModel.devices.collectAsState()
@@ -140,12 +144,13 @@ private fun AppFrame(viewModel: StaffViewModel = viewModel()) {
         }
     }
 
-    // imePadding обязателен: enableEdgeToEdge() отключает автоматическую подгонку окна,
-    // и windowSoftInputMode="adjustResize" из манифеста перестаёт работать. Без этого
-    // экранная клавиатура просто ложится поверх содержимого и закрывает поле ввода.
-    // Стоит на уровне каркаса, чтобы работало на всех экранах, а не только на журнале.
+    // imePadding здесь намеренно НЕ стоит. Он подгоняет высоту окна под клавиатуру, и тогда
+    // разметка сжимается: журнал схлопывается, а строка ввода с быстрыми командами уезжает
+    // за край экрана. Вместо этого клавиатура ложится поверх, а экран, которому она мешает,
+    // сам отодвигает содержимое прокруткой - см. LogScreen. Размеры при этом не меняются
+    // ни в альбомной ориентации, ни в портретной.
     Scaffold(containerColor = scheme.background) { innerPadding ->
-        Row(Modifier.fillMaxSize().padding(innerPadding).imePadding()) {
+        Row(Modifier.fillMaxSize().padding(innerPadding)) {
 
             NavigationRail(
                 containerColor = scheme.surface,

@@ -35,6 +35,14 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.WizardsStaff">
+        <!--
+            windowSoftInputMode="adjustResize" убирать нельзя, хотя окно у нас под клавиатуру
+            и не подгоняется. На Android 10 (планшет MatePad) высоту клавиатуры система
+            сообщает приложению только в этом режиме, а без неё экран логов не знает,
+            на сколько поднимать содержимое, и строка ввода остаётся под клавиатурой.
+            Само сжатие разметки выключено тем, что enableEdgeToEdge() отдаёт приложению
+            всю площадь экрана: подгонка окна с ним не работает.
+        -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
