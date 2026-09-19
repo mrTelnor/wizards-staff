@@ -29,6 +29,7 @@ static const char* LOG_STRIKE  = "STRIKE";    // датчик удара и ре
 static const char* LOG_CHARGE  = "CHARGE";    // взвод посоха
 static const char* LOG_ROLL    = "ROLL";      // сам бросок
 static const char* LOG_BATTERY = "BATTERY";   // заряд аккумулятора
+static const char* LOG_AUTH    = "AUTH";      // PIN и защита подключения
 
 // Куда отдавать строку кроме монитора порта. Ставится и снимается из главного скетча,
 // когда планшет подключается и отключается. Через указатель, а не прямым вызовом bleSendLog,

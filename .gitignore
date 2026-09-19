@@ -5,3 +5,7 @@ CLAUDE.local.md
 .vscode/
 Thumbs.db
 .DS_Store
+
+# PIN посоха. Файл создаётся из secrets.example.h и в репозиторий не входит:
+# попав в коммит, секрет останется в истории навсегда, даже если удалить его следующим.
+firmware/wizards_staff/secrets.h

@@ -10,6 +10,7 @@
 #include "history.h"
 #include "battery.h"
 #include "dice.h"
+#include "auth.h"
 #include "strike.h"
 #include "rtc.h"
 #include "ble.h"
@@ -30,6 +31,12 @@ bool          ledOn         = false;
 
 // Отслеживание связи для журнала: пока планшета нет, строки идут только в монитор порта.
 bool          logWasConnected = false;
+
+// Гейт авторизации. Живёт ровно один сеанс связи: отключился - значит в следующий раз
+// назовёт PIN заново. Правила в docs/ПЛАН-APP.md, раздел «Авторизация».
+bool          authed     = false;   // этот сеанс связи назвал верный PIN
+unsigned long authSince  = 0;       // когда подключились: от этого мгновения идут AUTH_TIMEOUT_MS
+bool          authClosed = false;   // связь уже разорвана за молчание, второй раз не рвём
 
 // Взвод: какой бросок сделает следующий удар об пол. Ноль в armedCount значит «не взведён»,
 // тогда удары не считаются вовсе. Пока нет кнопок на посохе, взводит приложение командой arm.
@@ -95,12 +102,81 @@ void bleOnCommand(JsonDocument& cmd) {
   // командой, которую и так видно, и не добавляет ничего.
   logLocal(LOG_BLE, LOG_INFO, "команда %s", name);
 
+  // Вход по PIN. Отвечаем на неё всегда: это единственная дверь внутрь.
+  if (strcmp(name, "auth") == 0) {
+    if (!authIsSet()) {
+      // Защиты нет - считаем, что дверь и так открыта. Отвечаем успехом, чтобы
+      // приложению не приходилось разбирать особый случай: оно просто шлёт auth всегда.
+      authed = true;
+      JsonDocument doc;
+      doc["ev"] = "auth";
+      doc["ok"] = true;
+      bleSend(doc);
+      logLine(LOG_AUTH, LOG_INFO, "вход открыт: PIN на посохе не задан");
+      return;
+    }
+
+    uint32_t wait = authWaitSeconds();
+    if (wait) {
+      JsonDocument doc;
+      doc["ev"]   = "auth";
+      doc["ok"]   = false;
+      doc["wait"] = wait;
+      bleSend(doc);
+      logLine(LOG_AUTH, LOG_WARN, "попытка входа во время паузы, ждать ещё %u с", wait);
+      return;
+    }
+
+    const char* pin = cmd["pin"] | "";
+    JsonDocument doc;
+    doc["ev"] = "auth";
+    if (authTry(pin)) {          // промах authTry записывает в журнал сама
+      authed = true;
+      doc["ok"] = true;
+      bleSend(doc);
+      logLine(LOG_AUTH, LOG_INFO, "вход разрешён");
+    } else {
+      doc["ok"] = false;
+      uint32_t after = authWaitSeconds();
+      if (after) doc["wait"] = after;
+      bleSend(doc);
+    }
+    return;
+  }
+
+  // Пока PIN не назван, наружу выдаём только то, что и так видно при сканировании:
+  // какой это посох и знает ли планшет его PIN. Этого хватает, чтобы приложение
+  // подставило сохранённый PIN, и не хватает ни для чего другого.
+  if (strcmp(name, "info") == 0 && authIsSet() && !authed) {
+    JsonDocument doc;
+    doc["ev"]      = "info";
+    doc["fw"]      = FW_VERSION;
+    doc["staffId"] = staffId;
+    doc["mac"]     = bleMac();
+    doc["pinset"]  = true;
+    bleSend(doc);
+    logLine(LOG_AUTH, LOG_INFO, "сведения выданы сокращённо: вход ещё не открыт");
+    return;
+  }
+
+  // Всё остальное закрыто, включая roll, arm и disarm. Настоящая пакость за игровым
+  // столом - это подкинутый бросок или снятый в нужный момент взвод, а не смена
+  // настроек подсветки, поэтому оставлять их открытыми ради удобства отладки незачем.
+  if (authIsSet() && !authed) {
+    char why[BLE_ERROR_TEXT];
+    snprintf(why, sizeof(why), "команда %s закрыта: сначала вход по PIN командой auth", name);
+    bleSendError("auth required", why);
+    return;
+  }
+
   if (strcmp(name, "info") == 0) {
     JsonDocument doc;
     doc["ev"]      = "info";
     doc["fw"]      = FW_VERSION;
     doc["staffId"] = staffId;     // постоянный номер посоха, переживает выключение
     doc["mac"]     = bleMac();    // тот же адрес, что приложение видит при сканировании
+    doc["pinset"]  = authIsSet();          // задан ли на посохе PIN
+    doc["authed"]  = authed;               // открыт ли вход в этом сеансе связи
     doc["hist"]    = HISTORY_FLASH_SIZE;   // ёмкость истории во флеш, а не экранной
     doc["arm"]     = ARM_TIMEOUT_MS / 1000;   // через сколько секунд спадает взвод: приложение
                                              // показывает это число, чтобы не хранить его у себя
@@ -250,6 +326,18 @@ void bleOnCommand(JsonDocument& cmd) {
     return;
   }
 
+  if (strcmp(name, "pin") == 0) {
+    // Смена PIN. Старый обязателен, даже когда вход уже открыт: планшет могли оставить
+    // без присмотра разблокированным, и тогда чужому хватило бы одной команды.
+    const char* why = authChange(cmd["old"] | "", cmd["new"] | "");
+    if (why) { bleSendError("pin rejected", why); return; }
+    JsonDocument doc;
+    doc["ev"]  = "ok";
+    doc["cmd"] = "pin";
+    bleSend(doc);
+    return;
+  }
+
   // Пустое имя значит, что поля cmd в присланном JSON не было вовсе: это другая ошибка,
   // и человеку полезнее услышать про неё, а не про незнакомую команду с пустым именем.
   char why[BLE_ERROR_TEXT];
@@ -288,6 +376,7 @@ void setup() {
   reportFlash();
   historyBegin();
   diceLoad();
+  authBegin();
   batteryBegin();
   strikeBegin();
   bleBegin();
@@ -304,6 +393,25 @@ void loop() {
   if (bleConnected != logWasConnected) {
     logWasConnected = bleConnected;
     logSink = bleConnected ? bleSendLog : nullptr;
+    // Каждый новый сеанс связи начинается с закрытой двери, даже если предыдущий
+    // её открыл. Отсчёт времени на ввод PIN идёт с этого мгновения.
+    authed     = false;
+    authClosed = false;
+    authSince  = now;
+  }
+
+  // Молчит и не называется - закрываемся сами. Ждать, пока чужой надумает уйти,
+  // незачем: пока он на связи, посох занят и планшет к нему не подключится.
+  if (bleConnected && authIsSet() && !authed && !authClosed
+      && now - authSince > AUTH_TIMEOUT_MS) {
+    authClosed = true;
+    JsonDocument doc;
+    doc["ev"] = "auth";
+    doc["ok"] = false;
+    bleSend(doc);
+    logLine(LOG_AUTH, LOG_WARN, "PIN не назван за %lu с, разрываю связь",
+            AUTH_TIMEOUT_MS / 1000);
+    bleDisconnect();
   }
 
   // Датчик опрашиваем всегда, иначе фильтр не увидит начало пачки переключений.

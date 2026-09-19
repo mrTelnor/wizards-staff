@@ -36,8 +36,18 @@ void bleOnCommand(JsonDocument& cmd);
 // Телефон подключился или отключился. После отключения снова становимся видимыми.
 class StaffServerCallbacks : public NimBLEServerCallbacks {
   void onConnect(NimBLEServer* server, NimBLEConnInfo& info) override {
+    // Одновременно на связи только один. Пока планшет подключён, чужой не может
+    // даже попробовать PIN. Реклама после подключения и так прекращается, так что
+    // второго обычно просто неоткуда взяться, но проверка стоит дёшево, а без неё
+    // пришлось бы верить умолчаниям NimBLE.
+    if (server->getConnectedCount() > 1) {
+      logLine(LOG_BLE, LOG_WARN, "второе подключение отклонено, посох занят");
+      server->disconnect(info.getConnHandle());
+      return;
+    }
     bleConnected  = true;
     bleConnHandle = info.getConnHandle();
+    NimBLEDevice::stopAdvertising();   // пока занят, посоха в эфире не видно
     logLine(LOG_BLE, LOG_INFO, "планшет подключился");
   }
   void onDisconnect(NimBLEServer* server, NimBLEConnInfo& info, int reason) override {
@@ -124,6 +134,12 @@ void bleBegin() {
 // Вызывать только после bleBegin().
 String bleMac() {
   return String(NimBLEDevice::getAddress().toString().c_str());
+}
+
+// Разрывает связь по своей воле. Нужно гейту авторизации: не назвался за отведённое
+// время - посох закрывается сам, а не ждёт, пока чужой надумает уйти.
+void bleDisconnect() {
+  if (bleServer && bleConnected) bleServer->disconnect(bleConnHandle);
 }
 
 // Отправляет JSON телефону одной строкой. Если телефон не подключён, молча пропускает.
