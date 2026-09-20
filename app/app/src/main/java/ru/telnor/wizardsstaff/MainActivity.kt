@@ -47,8 +47,11 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.launch
 import ru.telnor.wizardsstaff.ble.Connection
+import ru.telnor.wizardsstaff.db.CharacterRepository
 import ru.telnor.wizardsstaff.ui.ChangePinDialog
 import ru.telnor.wizardsstaff.ui.LogScreen
 import ru.telnor.wizardsstaff.ui.PermissionDialog
@@ -87,6 +90,10 @@ private val blePermissions: Array<String> =
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Первый запуск на чистой базе кладёт в неё Сильврина: редактора листов пока нет,
+        // и без засева раздел «Персонажи» открылся бы пустым навсегда. Вызов переедет
+        // в CharacterViewModel вместе с экраном листа.
+        lifecycleScope.launch { CharacterRepository(applicationContext).seedIfEmpty() }
         enableEdgeToEdge()
         setContent {
             WizardsStaffTheme {

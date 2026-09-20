@@ -7,18 +7,30 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 
 /**
- * База приложения. Пока в ней одна таблица — броски; персонажи и их действия придут
- * вместе с листами персонажей.
+ * База приложения: броски и листы персонажей.
  *
  * Версия и выгрузка схемы: слепок таблиц кладётся в `app/schemas` и едет в git.
  * Когда таблицы поменяются, версию надо поднять и написать миграцию — без слепка
  * Room не с чем будет сверять, а терять базу с бросками за год игр не хочется.
  */
-@Database(entities = [RollRecord::class], version = 1, exportSchema = true)
-@TypeConverters(RollConverters::class)
+@Database(
+    entities = [
+        RollRecord::class,
+        CharacterRecord::class,
+        CharacterWeaponRecord::class,
+        CharacterFeatRecord::class,
+        CharacterItemRecord::class,
+        CharacterSpellRecord::class,
+    ],
+    version = 2,
+    exportSchema = true,
+)
+@TypeConverters(RollConverters::class, CharacterConverters::class)
 abstract class StaffDatabase : RoomDatabase() {
 
     abstract fun rolls(): RollDao
+
+    abstract fun characters(): CharacterDao
 
     companion object {
         @Volatile
@@ -34,7 +46,12 @@ abstract class StaffDatabase : RoomDatabase() {
                     context.applicationContext,
                     StaffDatabase::class.java,
                     "wizards-staff.db",
-                ).build().also { instance = it }
+                )
+                    // Переезды перечисляются явно. Сноса базы при незнакомой версии
+                    // (fallbackToDestructiveMigration) здесь быть не должно: он молча
+                    // стёр бы броски за все прошлые игры.
+                    .addMigrations(MIGRATION_1_2)
+                    .build().also { instance = it }
             }
     }
 }
