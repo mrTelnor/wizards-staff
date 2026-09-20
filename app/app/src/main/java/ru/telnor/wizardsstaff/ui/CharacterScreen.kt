@@ -46,7 +46,11 @@ enum class CharacterTab(val title: String) {
 }
 
 @Composable
-fun CharacterScreen(character: CharacterSheet?, modifier: Modifier = Modifier) {
+fun CharacterScreen(
+    character: CharacterSheet?,
+    modifier: Modifier = Modifier,
+    actions: SheetActions = SheetActions(),
+) {
     // rememberSaveable: поворот планшета пересоздаёт активность, и обычный remember
     // вернул бы человека на «Обзор» с той вкладки, которую он читал.
     var tab by rememberSaveable { mutableStateOf(CharacterTab.Overview) }
@@ -57,7 +61,8 @@ fun CharacterScreen(character: CharacterSheet?, modifier: Modifier = Modifier) {
 
         when {
             character == null -> EmptyCharacters()
-            tab == CharacterTab.Overview -> CharacterOverview(character, Modifier.fillMaxSize())
+            tab == CharacterTab.Overview ->
+                CharacterOverview(character, Modifier.fillMaxSize(), actions)
             else -> TabComing(tab)
         }
     }

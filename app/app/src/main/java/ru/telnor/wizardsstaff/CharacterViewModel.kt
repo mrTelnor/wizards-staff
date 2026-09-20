@@ -47,4 +47,26 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     fun select(id: Long) {
         chosenId.value = id
     }
+
+    /*
+     * Правки листа. Номер персонажа берётся у открытого: нажать кнопку можно только
+     * на том листе, который сейчас на экране. Если листа нет, нажимать тоже нечего.
+     *
+     * Считать новое значение здесь нельзя: два быстрых нажатия прочитали бы одно и то же
+     * число. Прибавку считает база, см. CharacterDao.
+     */
+    private fun edit(block: suspend (Long) -> Unit) {
+        val id = selected.value?.id ?: return
+        viewModelScope.launch { block(id) }
+    }
+
+    fun addHeroPoints(delta: Int) = edit { repo.addHeroPoints(it, delta) }
+
+    fun addHp(delta: Int) = edit { repo.addHp(it, delta) }
+
+    fun addTempHp(delta: Int) = edit { repo.addTempHp(it, delta) }
+
+    fun addWounded(delta: Int) = edit { repo.addWounded(it, delta) }
+
+    fun setDying(dying: Boolean) = edit { repo.setDying(it, dying) }
 }

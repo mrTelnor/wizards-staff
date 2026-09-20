@@ -64,4 +64,34 @@ interface CharacterDao {
 
     @Insert
     suspend fun addSpells(spells: List<CharacterSpellRecord>)
+
+    /*
+     * Счётчики листа меняются прибавкой прямо в запросе, а не «прочитали, посчитали,
+     * записали». Иначе два быстрых нажатия на «+» успели бы прочитать одно и то же
+     * число и прибавить к нему по единице — одно нажатие пропало бы.
+     *
+     * Границы тоже здесь: за них не должно вывести ни одно нажатие, откуда бы оно ни
+     * пришло. MIN и MAX в SQLite с двумя аргументами — это «меньшее» и «большее»,
+     * а не подсчёт по всему столбцу.
+     */
+
+    /** Пункты героизма: от нуля до предела правил. */
+    @Query("UPDATE characters SET heroPoints = MAX(0, MIN(:limit, heroPoints + :delta)) WHERE id = :id")
+    suspend fun addHeroPoints(id: Long, delta: Int, limit: Int)
+
+    /** Текущие ПЗ: от нуля до максимума этого персонажа. */
+    @Query("UPDATE characters SET currentHp = MAX(0, MIN(maxHp, currentHp + :delta)) WHERE id = :id")
+    suspend fun addHp(id: Long, delta: Int)
+
+    /** Временные ПЗ: сверху не ограничены, их даёт заклинание или зелье. */
+    @Query("UPDATE characters SET tempHp = MAX(0, tempHp + :delta) WHERE id = :id")
+    suspend fun addTempHp(id: Long, delta: Int)
+
+    /** Ранения: от нуля до предела правил. */
+    @Query("UPDATE characters SET wounded = MAX(0, MIN(:limit, wounded + :delta)) WHERE id = :id")
+    suspend fun addWounded(id: Long, delta: Int, limit: Int)
+
+    /** «При смерти» — галочка, а не счётчик: так попросил автор листа. */
+    @Query("UPDATE characters SET dying = :dying WHERE id = :id")
+    suspend fun setDying(id: Long, dying: Boolean)
 }

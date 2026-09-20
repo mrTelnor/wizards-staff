@@ -19,21 +19,24 @@ import java.io.File
  */
 class MigrationSqlTest {
 
-    private val schema =
-        File("schemas/ru.telnor.wizardsstaff.db.StaffDatabase/2.json")
+    private fun schema(version: Int) =
+        File("schemas/ru.telnor.wizardsstaff.db.StaffDatabase/$version.json")
 
     @Test
-    fun `слепок схемы версии 2 лежит в проекте`() {
-        // Если файла нет, остальные проверки прошли бы молча и впустую.
-        assertTrue(
-            "не найден ${schema.absolutePath}: выгрузка схемы отключена или каталог переехал",
-            schema.isFile,
-        )
+    fun `слепки схем лежат в проекте`() {
+        // Если файлов нет, остальные проверки прошли бы молча и впустую.
+        for (version in 2..3) {
+            assertTrue(
+                "не найден ${schema(version).absolutePath}: выгрузка схемы отключена " +
+                    "или каталог переехал",
+                schema(version).isFile,
+            )
+        }
     }
 
     @Test
-    fun `миграция создаёт ровно то, что описано в слепке`() {
-        val expected = createStatements(schema.readText())
+    fun `миграция 1 в 2 создаёт ровно то, что описано в слепке`() {
+        val expected = createStatements(schema(2).readText())
             .filterNot { it.contains("`rolls`") }
 
         assertEquals(
@@ -41,6 +44,47 @@ class MigrationSqlTest {
             expected.sorted(),
             CHARACTER_TABLES_SQL.map { it.normalized() }.sorted(),
         )
+    }
+
+    @Test
+    fun `миграция 2 в 3 добавляет ровно те столбцы, что появились в слепке`() {
+        val before = charactersColumns(schema(2).readText())
+        val after = charactersColumns(schema(3).readText())
+        val added = after.filterKeys { it !in before }
+
+        assertTrue("между версиями 2 и 3 у персонажа не прибавилось ни одного столбца", added.isNotEmpty())
+        assertEquals(
+            "ALTER-ы разошлись со слепком: перенеси описание столбца из 3.json как есть",
+            added.values.map { "ALTER TABLE `characters` ADD COLUMN $it" }.sorted(),
+            BATTLE_STATE_SQL.map { it.normalized() }.sorted(),
+        )
+    }
+
+    @Test
+    fun `новые столбцы не остаются без умолчания`() {
+        val before = charactersColumns(schema(2).readText())
+        val after = charactersColumns(schema(3).readText())
+        for ((name, definition) in after.filterKeys { it !in before }) {
+            // SQLite не добавит к заполненной таблице столбец NOT NULL без DEFAULT:
+            // существующим строкам нечем заполнить новое поле.
+            assertTrue(
+                "столбцу $name нужен DEFAULT: он NOT NULL, а листы в базе уже есть",
+                !definition.contains("NOT NULL") || definition.contains("DEFAULT"),
+            )
+        }
+    }
+
+    /**
+     * Столбцы таблицы персонажа из слепка: имя → описание вида «`tempHp` INTEGER NOT NULL
+     * DEFAULT 0». Разбирается прямо из `createSql`: у этой таблицы нет внешних ключей,
+     * поэтому скобки внутри описания не встречаются и хватает разделения по запятой.
+     */
+    private fun charactersColumns(json: String): Map<String, String> {
+        val sql = createStatements(json).first { it.startsWith("CREATE TABLE IF NOT EXISTS `characters`") }
+        val inside = sql.substringAfter("(").substringBeforeLast(")")
+        return inside.split(", `")
+            .map { if (it.startsWith("`")) it else "`$it" }
+            .associateBy { it.substringAfter("`").substringBefore("`") }
     }
 
     /**

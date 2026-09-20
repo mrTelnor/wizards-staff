@@ -4,7 +4,9 @@ import android.content.Context
 import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import ru.telnor.wizardsstaff.rules.HERO_POINTS_MAX
 import ru.telnor.wizardsstaff.rules.Sheet
+import ru.telnor.wizardsstaff.rules.WOUNDED_MAX
 
 /**
  * Лист персонажа в том виде, в каком его показывает экран: паспорт, входные данные
@@ -39,6 +41,20 @@ class CharacterRepository(context: Context) {
 
     /** Один лист. Null, если персонажа удалили. */
     fun byId(id: Long): Flow<CharacterSheet?> = dao.byId(id).map { it?.toSheet() }
+
+    // Правки прямо из листа. Пределы правил живут в `rules/Pf2.kt`, а держит их база:
+    // считать «не больше трёх» на стороне экрана — значит повторить это в каждом месте,
+    // откуда придёт нажатие.
+
+    suspend fun addHeroPoints(id: Long, delta: Int) = dao.addHeroPoints(id, delta, HERO_POINTS_MAX)
+
+    suspend fun addHp(id: Long, delta: Int) = dao.addHp(id, delta)
+
+    suspend fun addTempHp(id: Long, delta: Int) = dao.addTempHp(id, delta)
+
+    suspend fun addWounded(id: Long, delta: Int) = dao.addWounded(id, delta, WOUNDED_MAX)
+
+    suspend fun setDying(id: Long, dying: Boolean) = dao.setDying(id, dying)
 
     /**
      * Засев при первом запуске: если персонажей нет ни одного, в базу кладётся Сильврин.

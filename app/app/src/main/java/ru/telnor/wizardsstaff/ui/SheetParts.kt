@@ -164,8 +164,9 @@ fun SheetCard(
 /**
  * Плитка с числом: класс брони, здоровье, классовая СЛ, СЛ заклинаний, скорость.
  *
- * `suffix` — приписка мелким справа от числа: «фт» у скорости, «/ 82» у здоровья.
- * `fill` рисует полоску снизу; у здоровья она показывает, сколько осталось.
+ * `suffix` — приписка мелким справа от числа: «фт» у скорости.
+ *
+ * Здоровье такой плиткой не рисуется: у него своя, со шкалой и кнопками, в «Обзоре».
  */
 @Composable
 fun SheetTile(
@@ -173,7 +174,6 @@ fun SheetTile(
     value: String,
     modifier: Modifier = Modifier,
     suffix: String? = null,
-    fill: Float? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
     Card(
@@ -202,22 +202,6 @@ fun SheetTile(
                         style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp),
                         color = scheme.onSurfaceVariant,
                         modifier = Modifier.padding(bottom = 3.dp),
-                    )
-                }
-            }
-            if (fill != null) {
-                Spacer(Modifier.height(PosohDimens.spaceS))
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(5.dp)
-                        .background(scheme.surfaceContainerHigh, RoundedCornerShape(3.dp)),
-                ) {
-                    Box(
-                        Modifier
-                            .fillMaxWidth(fill.coerceIn(0f, 1f))
-                            .height(5.dp)
-                            .background(scheme.primary, RoundedCornerShape(3.dp)),
                     )
                 }
             }

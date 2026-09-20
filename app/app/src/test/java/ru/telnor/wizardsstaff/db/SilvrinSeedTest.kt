@@ -59,6 +59,10 @@ class SilvrinSeedTest {
         assertEquals(2, c.bulk)
         assertEquals(12, c.maxBulk)
         assertEquals(4, c.cantripRank)
+        // Состояние в бою начинается с чистого листа: в бланке таких полей нет.
+        assertEquals(0, c.tempHp)
+        assertEquals(0, c.wounded)
+        assertEquals(false, c.dying)
     }
 
     @Test

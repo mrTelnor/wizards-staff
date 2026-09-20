@@ -78,3 +78,24 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
         CHARACTER_TABLES_SQL.forEach(db::execSQL)
     }
 }
+
+/**
+ * Состояние персонажа в бою: временные ПЗ, ранения и «при смерти». Добавляются столбцами
+ * к уже существующим листам, поэтому у каждого есть умолчание — иначе старой строке
+ * нечем заполнить новое поле, и SQLite такую правку просто не примет.
+ *
+ * Умолчание продублировано в `@ColumnInfo(defaultValue = "0")` у поля записи: Room
+ * сверяет со слепком и умолчания тоже, и столбец без него не сойдётся со столбцом с ним.
+ */
+val BATTLE_STATE_SQL: List<String> = listOf(
+    "ALTER TABLE `characters` ADD COLUMN `tempHp` INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE `characters` ADD COLUMN `wounded` INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE `characters` ADD COLUMN `dying` INTEGER NOT NULL DEFAULT 0",
+)
+
+/** Версия 2 → 3: счётчики состояния в листе. */
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        BATTLE_STATE_SQL.forEach(db::execSQL)
+    }
+}

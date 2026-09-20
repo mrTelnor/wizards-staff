@@ -1,5 +1,6 @@
 package ru.telnor.wizardsstaff.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import ru.telnor.wizardsstaff.rules.Ability
@@ -65,6 +66,18 @@ data class CharacterRecord(
     // Невыводимое: просто числа из бланка.
     val maxHp: Int,
     val currentHp: Int,
+    /**
+     * Состояние в бою. Меняется кнопками прямо в листе, поэтому и лежит рядом с ПЗ.
+     *
+     * Умолчания нужны не коду, а базе: столбцы добавлены в версии 3 поверх уже
+     * заполненных листов, и старым строкам надо чем-то заполнить пустоту.
+     */
+    @ColumnInfo(defaultValue = "0")
+    val tempHp: Int = 0,
+    @ColumnInfo(defaultValue = "0")
+    val wounded: Int = 0,
+    @ColumnInfo(defaultValue = "0")
+    val dying: Boolean = false,
     val resistances: String,
     val languages: String,
     /** Щит: КБ, который он даёт, и его твёрдость. Ноль — щита нет. */

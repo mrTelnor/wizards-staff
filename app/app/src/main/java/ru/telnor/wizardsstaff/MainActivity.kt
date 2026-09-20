@@ -62,6 +62,7 @@ import ru.telnor.wizardsstaff.ui.LogScreen
 import ru.telnor.wizardsstaff.ui.PermissionDialog
 import ru.telnor.wizardsstaff.ui.PinPromptDialog
 import ru.telnor.wizardsstaff.ui.RollsScreen
+import ru.telnor.wizardsstaff.ui.SheetActions
 import ru.telnor.wizardsstaff.ui.StaffIcons
 import ru.telnor.wizardsstaff.ui.StaffScreen
 import ru.telnor.wizardsstaff.ui.theme.PosohDimens
@@ -262,7 +263,16 @@ private fun AppFrame(
                         onExplainPermission = { showPermissionDialog = true },
                     )
 
-                    section == Section.Characters -> CharacterScreen(character)
+                    section == Section.Characters -> CharacterScreen(
+                        character = character,
+                        actions = SheetActions(
+                            heroPoints = characterViewModel::addHeroPoints,
+                            hp = characterViewModel::addHp,
+                            tempHp = characterViewModel::addTempHp,
+                            wounded = characterViewModel::addWounded,
+                            dying = characterViewModel::setDying,
+                        ),
+                    )
 
                     else -> Placeholder(
                         title = "Статистика",

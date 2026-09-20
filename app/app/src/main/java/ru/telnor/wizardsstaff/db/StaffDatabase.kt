@@ -22,7 +22,7 @@ import androidx.room.TypeConverters
         CharacterItemRecord::class,
         CharacterSpellRecord::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 @TypeConverters(RollConverters::class, CharacterConverters::class)
@@ -50,7 +50,7 @@ abstract class StaffDatabase : RoomDatabase() {
                     // Переезды перечисляются явно. Сноса базы при незнакомой версии
                     // (fallbackToDestructiveMigration) здесь быть не должно: он молча
                     // стёр бы броски за все прошлые игры.
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .build().also { instance = it }
             }
     }
