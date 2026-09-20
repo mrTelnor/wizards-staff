@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 2,
-    "identityHash": "368d9fe5cf08fc0b3da35f9976bbbc21",
+    "identityHash": "4647cfc4a96c5217d8d02dce71bd8546",
     "entities": [
       {
         "tableName": "rolls",
@@ -368,7 +368,7 @@
       },
       {
         "tableName": "character_weapons",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `characterId` INTEGER NOT NULL, `name` TEXT NOT NULL, `rank` TEXT NOT NULL, `damageDice` TEXT NOT NULL, `potency` INTEGER NOT NULL, `finesse` INTEGER NOT NULL, `traits` TEXT NOT NULL, `position` INTEGER NOT NULL, FOREIGN KEY(`characterId`) REFERENCES `characters`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `characterId` INTEGER NOT NULL, `name` TEXT NOT NULL, `shortName` TEXT NOT NULL, `rank` TEXT NOT NULL, `damageDice` TEXT NOT NULL, `potency` INTEGER NOT NULL, `finesse` INTEGER NOT NULL, `traits` TEXT NOT NULL, `position` INTEGER NOT NULL, FOREIGN KEY(`characterId`) REFERENCES `characters`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "id",
@@ -385,6 +385,12 @@
           {
             "fieldPath": "name",
             "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "shortName",
+            "columnName": "shortName",
             "affinity": "TEXT",
             "notNull": true
           },
@@ -687,7 +693,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '368d9fe5cf08fc0b3da35f9976bbbc21')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '4647cfc4a96c5217d8d02dce71bd8546')"
     ]
   }
 }

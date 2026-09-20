@@ -9,7 +9,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,6 +27,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -43,16 +47,17 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
-import kotlinx.coroutines.launch
 import ru.telnor.wizardsstaff.ble.Connection
-import ru.telnor.wizardsstaff.db.CharacterRepository
+import ru.telnor.wizardsstaff.db.CharacterSheet
 import ru.telnor.wizardsstaff.ui.ChangePinDialog
+import ru.telnor.wizardsstaff.ui.CharacterAvatar
+import ru.telnor.wizardsstaff.ui.CharacterScreen
 import ru.telnor.wizardsstaff.ui.LogScreen
 import ru.telnor.wizardsstaff.ui.PermissionDialog
 import ru.telnor.wizardsstaff.ui.PinPromptDialog
@@ -67,8 +72,7 @@ import ru.telnor.wizardsstaff.ui.theme.WizardsStaffTheme
  * Каркас приложения: слева навигационная рейка с индикатором связи, сверху панель заголовка,
  * дальше содержимое раздела. Разметка по макетам в docs/design.
  *
- * Разделы «Персонажи» и «Статистика» пока заглушки: они появятся в задачах C2 и D1
- * плана docs/ПЛАН-APP.md.
+ * Раздел «Статистика» пока заглушка: он появится в задаче D1 плана docs/ПЛАН-APP.md.
  */
 
 /** Разделы приложения. */
@@ -90,10 +94,6 @@ private val blePermissions: Array<String> =
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Первый запуск на чистой базе кладёт в неё Сильврина: редактора листов пока нет,
-        // и без засева раздел «Персонажи» открылся бы пустым навсегда. Вызов переедет
-        // в CharacterViewModel вместе с экраном листа.
-        lifecycleScope.launch { CharacterRepository(applicationContext).seedIfEmpty() }
         enableEdgeToEdge()
         setContent {
             WizardsStaffTheme {
@@ -104,7 +104,10 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun AppFrame(viewModel: StaffViewModel = viewModel()) {
+private fun AppFrame(
+    viewModel: StaffViewModel = viewModel(),
+    characterViewModel: CharacterViewModel = viewModel(),
+) {
     val scheme = MaterialTheme.colorScheme
     val context = androidx.compose.ui.platform.LocalContext.current
 
@@ -133,6 +136,8 @@ private fun AppFrame(viewModel: StaffViewModel = viewModel()) {
     val armed by viewModel.armed.collectAsState()
     val clockSkew by viewModel.clockSkew.collectAsState()
     val logLines by viewModel.logLines.collectAsState()
+    val characters by characterViewModel.characters.collectAsState()
+    val character by characterViewModel.selected.collectAsState()
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -206,6 +211,9 @@ private fun AppFrame(viewModel: StaffViewModel = viewModel()) {
                     rollCount = rolls.size,
                     connection = connection,
                     armedFormula = armed?.formula,
+                    characters = characters,
+                    character = character,
+                    onSelectCharacter = characterViewModel::select,
                 )
                 HorizontalDivider(color = scheme.outlineVariant)
 
@@ -254,12 +262,7 @@ private fun AppFrame(viewModel: StaffViewModel = viewModel()) {
                         onExplainPermission = { showPermissionDialog = true },
                     )
 
-                    section == Section.Characters -> Placeholder(
-                        title = "Листы персонажей",
-                        text = "Появятся следующим шагом. Тогда броски будут складываться " +
-                            "с модификатором выбранного действия, а пока кость выбирается вручную " +
-                            "в разделе «Броски».",
-                    )
+                    section == Section.Characters -> CharacterScreen(character)
 
                     else -> Placeholder(
                         title = "Статистика",
@@ -355,6 +358,9 @@ private fun TopBar(
     rollCount: Int,
     connection: Connection,
     armedFormula: String?,
+    characters: List<CharacterSheet>,
+    character: CharacterSheet?,
+    onSelectCharacter: (Long) -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
     Row(
@@ -370,19 +376,80 @@ private fun TopBar(
             style = MaterialTheme.typography.headlineSmall,
         )
         Spacer(Modifier.width(PosohDimens.spaceM))
-        Text(
-            text = if (logsOpen) {
-                "обмен по Bluetooth"
-            } else if (section == Section.Rolls && rollCount > 0) {
-                "сегодня · $rollCount " + plural(rollCount, "бросок", "броска", "бросков")
-            } else {
-                section.subtitle
-            },
-            style = MaterialTheme.typography.bodyMedium,
-            color = scheme.onSurfaceVariant,
-        )
+        // У раздела «Персонажи» вместо подписи стоит переключатель: подпись «листы
+        // и действия» ничего не добавляла бы рядом с именем открытого персонажа.
+        if (!logsOpen && section == Section.Characters && character != null) {
+            CharacterChip(
+                character = character,
+                characters = characters,
+                onSelect = onSelectCharacter,
+            )
+        } else {
+            Text(
+                text = if (logsOpen) {
+                    "обмен по Bluetooth"
+                } else if (section == Section.Rolls && rollCount > 0) {
+                    "сегодня · $rollCount " + plural(rollCount, "бросок", "броска", "бросков")
+                } else {
+                    section.subtitle
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = scheme.onSurfaceVariant,
+            )
+        }
         Spacer(Modifier.weight(1f))
         StaffChip(connection, armedFormula)
+    }
+}
+
+/**
+ * Чип выбора персонажа в верхней панели. Списка персонажей сбоку нет (SCREENS.md, 3):
+ * на одного-двух персонажей колонка съедала бы треть экрана.
+ *
+ * Пока персонаж один, меню всё равно открывается: пустое нажатие объяснимее, чем
+ * чип, который иногда нажимается, а иногда нет.
+ */
+@Composable
+private fun CharacterChip(
+    character: CharacterSheet,
+    characters: List<CharacterSheet>,
+    onSelect: (Long) -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    var open by remember { mutableStateOf(false) }
+
+    Box {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier
+                .height(44.dp)
+                .clip(RoundedCornerShape(22.dp))
+                .background(scheme.surface)
+                .border(BorderStroke(1.dp, scheme.outlineVariant), RoundedCornerShape(22.dp))
+                .clickable { open = true }
+                .padding(start = 6.dp, end = 12.dp),
+        ) {
+            CharacterAvatar(character.name, size = 32)
+            Text(character.name.substringBefore(' '), style = MaterialTheme.typography.labelLarge)
+            Icon(
+                imageVector = StaffIcons.ChevronDown,
+                contentDescription = "Выбрать персонажа",
+                tint = scheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            characters.forEach { item ->
+                DropdownMenuItem(
+                    text = { Text(item.name) },
+                    onClick = {
+                        onSelect(item.id)
+                        open = false
+                    },
+                )
+            }
+        }
     }
 }
 

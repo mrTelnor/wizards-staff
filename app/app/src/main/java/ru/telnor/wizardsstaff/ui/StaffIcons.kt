@@ -104,6 +104,9 @@ object StaffIcons {
     /** Вернуться назад. */
     val Back: ImageVector = strokeIcon("M19.5 12H5", "m11 5.5-6 6.5 6 6.5")
 
+    /** Раскрыть список: чип выбора персонажа. */
+    val ChevronDown: ImageVector = strokeIcon("m7 10.5 5 5 5-5")
+
     /** Отправить команду посоху. */
     val Send: ImageVector = strokeIcon("M4 12h13", "m12 6.5 6 5.5-6 5.5")
 

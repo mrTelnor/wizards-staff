@@ -85,9 +85,12 @@ fun silvrinSeed(): CharacterSeed {
         cantripRank = 4,
     )
 
-    val weapons = listOf(SILVRIN_CLAWS, SILVRIN_MAUL).mapIndexed { at, weapon ->
-        weapon.toRecord(position = at)
-    }
+    // Короткие имена — из макета: в строках листа стоит «Атака когтями», а не полное
+    // имя предмета, которое заняло бы всю строку и оставило формулу без места.
+    val weapons = listOf(
+        SILVRIN_CLAWS.toRecord(shortName = "когтями", position = 0),
+        SILVRIN_MAUL.toRecord(shortName = "молотом", position = 1),
+    )
 
     // Порядок внутри колонки — как в бланке: сверху то, что получено раньше.
     val feats = buildFeats()
@@ -129,9 +132,10 @@ fun silvrinSeed(): CharacterSeed {
 }
 
 /** Оружие из правил в строку таблицы. */
-private fun Weapon.toRecord(position: Int) = CharacterWeaponRecord(
+private fun Weapon.toRecord(shortName: String, position: Int) = CharacterWeaponRecord(
     characterId = 0,
     name = name,
+    shortName = shortName,
     rank = rank,
     damageDice = damageDice,
     potency = potency,
