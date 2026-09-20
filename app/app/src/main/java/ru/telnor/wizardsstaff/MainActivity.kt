@@ -271,6 +271,7 @@ private fun AppFrame(
                             tempHp = characterViewModel::addTempHp,
                             wounded = characterViewModel::addWounded,
                             dying = characterViewModel::setDying,
+                            heal = characterViewModel::heal,
                         ),
                     )
 

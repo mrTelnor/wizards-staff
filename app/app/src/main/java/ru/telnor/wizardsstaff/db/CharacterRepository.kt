@@ -56,6 +56,8 @@ class CharacterRepository(context: Context) {
 
     suspend fun setDying(id: Long, dying: Boolean) = dao.setDying(id, dying)
 
+    suspend fun heal(id: Long) = dao.heal(id)
+
     /**
      * Засев при первом запуске: если персонажей нет ни одного, в базу кладётся Сильврин.
      * Возвращает true, если засев состоялся.

@@ -94,4 +94,14 @@ interface CharacterDao {
     /** «При смерти» — галочка, а не счётчик: так попросил автор листа. */
     @Query("UPDATE characters SET dying = :dying WHERE id = :id")
     suspend fun setDying(id: Long, dying: Boolean)
+
+    /**
+     * «Полностью здоров»: ПЗ до максимума, временные ПЗ и ранения в ноль, «при смерти»
+     * снято. Одним запросом, а не пятью — после ночного отдыха всё это возвращается
+     * разом, и промежуточных состояний вроде «здоров, но при смерти» быть не должно.
+     */
+    @Query(
+        "UPDATE characters SET currentHp = maxHp, tempHp = 0, wounded = 0, dying = 0 WHERE id = :id"
+    )
+    suspend fun heal(id: Long)
 }

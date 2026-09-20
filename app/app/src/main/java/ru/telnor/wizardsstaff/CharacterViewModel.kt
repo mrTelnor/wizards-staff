@@ -69,4 +69,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     fun addWounded(delta: Int) = edit { repo.addWounded(it, delta) }
 
     fun setDying(dying: Boolean) = edit { repo.setDying(it, dying) }
+
+    /** «Полностью здоров»: ПЗ до максимума, временные ПЗ и ранения в ноль, «при смерти» снято. */
+    fun heal() = edit { repo.heal(it) }
 }
