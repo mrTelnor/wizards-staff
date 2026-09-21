@@ -3,14 +3,18 @@ package ru.telnor.wizardsstaff
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import ru.telnor.wizardsstaff.db.CharacterRepository
 import ru.telnor.wizardsstaff.db.CharacterSheet
+import ru.telnor.wizardsstaff.db.sameAs
 
 /**
  * Листы персонажей: что показывать в разделе «Персонажи».
@@ -38,6 +42,23 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
             list.firstOrNull { it.id == id } ?: list.firstOrNull()
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    /**
+     * Сохранения открытого персонажа, свежие сверху. `flatMapLatest` переподписывается
+     * на другой запрос, когда чипом выбрали другого персонажа.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val saves: StateFlow<List<CharacterSheet>> = selected
+        .flatMapLatest { sheet -> if (sheet == null) flowOf(emptyList()) else repo.savesOf(sheet.id) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * Совпадает ли открытый лист с каким-нибудь своим сохранением. Считается по уже
+     * загруженным данным, отдельного запроса к базе не нужно.
+     */
+    val currentSaved: StateFlow<Boolean> = combine(selected, saves) { sheet, list ->
+        sheet != null && list.any { it.sameAs(sheet) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
     init {
         // Засев на чистой базе. Редактора листов пока нет, и без него раздел «Персонажи»
         // открылся бы пустым навсегда.
@@ -46,6 +67,12 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun select(id: Long) {
         chosenId.value = id
+    }
+
+    /** Снимает копию открытого листа под этим именем. */
+    fun saveCopy(name: String) {
+        val sheet = selected.value ?: return
+        viewModelScope.launch { repo.saveCopy(sheet, name, System.currentTimeMillis()) }
     }
 
     /*

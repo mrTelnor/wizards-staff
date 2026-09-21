@@ -31,13 +31,19 @@ data class FullCharacter(
 @Dao
 interface CharacterDao {
 
+    /*
+     * Живые листы отличаются от сохранений пустым `saveName`. Поэтому почти во всех
+     * запросах стоит `saveName IS NULL`: без него копии полезли бы в чип выбора
+     * персонажа и в засев.
+     */
+
     /**
-     * Все листы, по порядку добавления. `@Transaction` обязателен: без него Room читает
-     * персонажа и его части разными запросами, и между ними в базу успевает кто-то
+     * Все живые листы, по порядку добавления. `@Transaction` обязателен: без него Room
+     * читает персонажа и его части разными запросами, и между ними в базу успевает кто-то
      * записать — лист приедет наполовину старым.
      */
     @Transaction
-    @Query("SELECT * FROM characters ORDER BY id")
+    @Query("SELECT * FROM characters WHERE saveName IS NULL ORDER BY id")
     fun all(): Flow<List<FullCharacter>>
 
     /** Один лист. Null, если такого персонажа больше нет. */
@@ -45,8 +51,13 @@ interface CharacterDao {
     @Query("SELECT * FROM characters WHERE id = :id")
     fun byId(id: Long): Flow<FullCharacter?>
 
-    /** Сколько персонажей в базе. По нулю решается, нужен ли засев. */
-    @Query("SELECT COUNT(*) FROM characters")
+    /** Сохранения одного персонажа, свежие сверху. */
+    @Transaction
+    @Query("SELECT * FROM characters WHERE saveOf = :id ORDER BY savedAt DESC")
+    fun savesOf(id: Long): Flow<List<FullCharacter>>
+
+    /** Сколько живых персонажей в базе. По нулю решается, нужен ли засев. */
+    @Query("SELECT COUNT(*) FROM characters WHERE saveName IS NULL")
     suspend fun count(): Int
 
     /** Возвращает номер, который база дала новому персонажу: по нему привязываются части. */

@@ -62,6 +62,7 @@ import ru.telnor.wizardsstaff.ui.LogScreen
 import ru.telnor.wizardsstaff.ui.PermissionDialog
 import ru.telnor.wizardsstaff.ui.PinPromptDialog
 import ru.telnor.wizardsstaff.ui.RollsScreen
+import ru.telnor.wizardsstaff.ui.CharacterSaveButtons
 import ru.telnor.wizardsstaff.ui.SheetActions
 import ru.telnor.wizardsstaff.ui.StaffIcons
 import ru.telnor.wizardsstaff.ui.StaffScreen
@@ -139,6 +140,8 @@ private fun AppFrame(
     val logLines by viewModel.logLines.collectAsState()
     val characters by characterViewModel.characters.collectAsState()
     val character by characterViewModel.selected.collectAsState()
+    val characterSaves by characterViewModel.saves.collectAsState()
+    val characterSaved by characterViewModel.currentSaved.collectAsState()
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -215,6 +218,9 @@ private fun AppFrame(
                     characters = characters,
                     character = character,
                     onSelectCharacter = characterViewModel::select,
+                    saves = characterSaves,
+                    characterSaved = characterSaved,
+                    onSaveCharacter = characterViewModel::saveCopy,
                 )
                 HorizontalDivider(color = scheme.outlineVariant)
 
@@ -375,6 +381,9 @@ private fun TopBar(
     characters: List<CharacterSheet>,
     character: CharacterSheet?,
     onSelectCharacter: (Long) -> Unit,
+    saves: List<CharacterSheet>,
+    characterSaved: Boolean,
+    onSaveCharacter: (String) -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
     Row(
@@ -397,6 +406,12 @@ private fun TopBar(
                 character = character,
                 characters = characters,
                 onSelect = onSelectCharacter,
+            )
+            CharacterSaveButtons(
+                character = character,
+                saves = saves,
+                saved = characterSaved,
+                onSave = onSaveCharacter,
             )
         } else {
             Text(

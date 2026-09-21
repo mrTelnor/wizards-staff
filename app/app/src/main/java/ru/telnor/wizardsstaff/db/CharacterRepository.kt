@@ -17,6 +17,7 @@ import ru.telnor.wizardsstaff.rules.WOUNDED_MAX
  */
 data class CharacterSheet(
     val record: CharacterRecord,
+    // Части листа. Каждая новая должна попасть в `saveCopy` и `sameAs` — см. выше.
     val weapons: List<CharacterWeaponRecord>,
     val feats: List<CharacterFeatRecord>,
     val items: List<CharacterItemRecord>,
@@ -30,6 +31,24 @@ data class CharacterSheet(
     fun feats(group: FeatGroup): List<CharacterFeatRecord> = feats.filter { it.featGroup == group }
 }
 
+/*
+ * ВАЖНО ПРИ ДОБАВЛЕНИИ ДАННЫХ В ЛИСТ.
+ *
+ * Сохранение персонажа — копия строки со всеми её частями (`CharacterSaves.kt`,
+ * `CharacterRepository.saveCopy`). Из этого следуют два правила:
+ *
+ * 1. Новый СТОЛБЕЦ у `characters` или у части попадёт в сохранение сам: копируется
+ *    вся строка целиком. Ничего дописывать не нужно.
+ * 2. Новая ТАБЛИЦА-часть листа (пятый список рядом с оружием, чертами, предметами
+ *    и заклинаниями) сама никуда не попадёт. Её надо вписать в три места:
+ *    `CharacterSheet`, `CharacterRepository.saveCopy` и `CharacterSheet.sameAs`.
+ *    Иначе сохранение потеряет её молча, а сверка «состояние сохранено» будет врать.
+ *
+ * То же касается новых вкладок листа: если вкладка хранит свои данные, они обязаны
+ * ехать в сохранение. Тест `CharacterSaveTest` считает части и падает, когда их
+ * становится больше, — но только если не забыть поправить и его.
+ */
+
 /** Между базой и экраном персонажей. */
 class CharacterRepository(context: Context) {
 
@@ -41,6 +60,30 @@ class CharacterRepository(context: Context) {
 
     /** Один лист. Null, если персонажа удалили. */
     fun byId(id: Long): Flow<CharacterSheet?> = dao.byId(id).map { it?.toSheet() }
+
+    /** Сохранения персонажа, свежие сверху. */
+    fun savesOf(id: Long): Flow<List<CharacterSheet>> =
+        dao.savesOf(id).map { list -> list.map { it.toSheet() } }
+
+    /**
+     * Снимает копию листа под данным именем. Части копируются вместе с ним и получают
+     * номер новой строки — иначе они остались бы привязаны к живому персонажу и уехали
+     * бы вместе с его правками.
+     *
+     * **Добавил новую часть листа — впиши её сюда.** Здесь перечислены все таблицы,
+     * из которых состоит персонаж, и забытая просто не сохранится.
+     */
+    suspend fun saveCopy(sheet: CharacterSheet, name: String, at: Long): Long =
+        db.withTransaction {
+            val id = dao.add(
+                sheet.record.copy(id = 0, saveName = name, savedAt = at, saveOf = sheet.id),
+            )
+            dao.addWeapons(sheet.weapons.map { it.copy(id = 0, characterId = id) })
+            dao.addFeats(sheet.feats.map { it.copy(id = 0, characterId = id) })
+            dao.addItems(sheet.items.map { it.copy(id = 0, characterId = id) })
+            dao.addSpells(sheet.spells.map { it.copy(id = 0, characterId = id) })
+            id
+        }
 
     // Правки прямо из листа. Пределы правил живут в `rules/Pf2.kt`, а держит их база:
     // считать «не больше трёх» на стороне экрана — значит повторить это в каждом месте,
@@ -95,6 +138,35 @@ class CharacterRepository(context: Context) {
         id
     }
 }
+
+/**
+ * Совпадают ли два листа по содержимому. Номера строк и подпись сохранения
+ * не в счёт: у копии они свои по определению.
+ *
+ * **Добавил новую часть листа — впиши её и сюда.** Забытая часть не сломает ничего
+ * заметного, но сверка начнёт врать: изменение в ней не будет считаться изменением,
+ * и человека не предупредят, что состояние не сохранено.
+ *
+ * Сравнивается всё — и паспорт, и ПЗ с опытом, и поднятый щит, и части. По этому
+ * сравнению лист считается сохранённым, и человека не спрашивают лишний раз.
+ */
+fun CharacterSheet.sameAs(other: CharacterSheet): Boolean =
+    record.forCompare() == other.record.forCompare() &&
+        weapons.map { it.forCompare() } == other.weapons.map { it.forCompare() } &&
+        feats.map { it.forCompare() } == other.feats.map { it.forCompare() } &&
+        items.map { it.forCompare() } == other.items.map { it.forCompare() } &&
+        spells.map { it.forCompare() } == other.spells.map { it.forCompare() }
+
+private fun CharacterRecord.forCompare() =
+    copy(id = 0, saveName = null, savedAt = null, saveOf = null)
+
+private fun CharacterWeaponRecord.forCompare() = copy(id = 0, characterId = 0)
+
+private fun CharacterFeatRecord.forCompare() = copy(id = 0, characterId = 0)
+
+private fun CharacterItemRecord.forCompare() = copy(id = 0, characterId = 0)
+
+private fun CharacterSpellRecord.forCompare() = copy(id = 0, characterId = 0)
 
 /**
  * Раскладывает части листа по порядку. Room отдаёт их в том порядке, в каком их вернула

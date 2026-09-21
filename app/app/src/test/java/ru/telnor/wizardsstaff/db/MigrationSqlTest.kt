@@ -25,7 +25,7 @@ class MigrationSqlTest {
     @Test
     fun `слепки схем лежат в проекте`() {
         // Если файлов нет, остальные проверки прошли бы молча и впустую.
-        for (version in 2..8) {
+        for (version in 2..9) {
             assertTrue(
                 "не найден ${schema(version).absolutePath}: выгрузка схемы отключена " +
                     "или каталог переехал",
@@ -105,11 +105,21 @@ class MigrationSqlTest {
     }
 
     @Test
+    fun `миграция 8 в 9 добавляет ровно те столбцы, что появились в слепке`() {
+        assertEquals(
+            "ALTER-ы разошлись со слепком: перенеси описание столбца из 9.json как есть",
+            addedColumns(8, 9).values.map { "ALTER TABLE `characters` ADD COLUMN $it" }.sorted(),
+            CHARACTER_SAVES_SQL.map { it.normalized() }.sorted(),
+        )
+    }
+
+    @Test
     fun `новые столбцы не остаются без умолчания`() {
         // Правило общее для всех переездов, поэтому проверяется на каждом: забыть
         // DEFAULT легче всего в следующей миграции, а не в уже написанной.
-        for (version in 3..8) {
-            val table = if (version >= 7) "character_weapons" else "characters"
+        for (version in 3..9) {
+            // В версиях 7 и 8 столбцы прибавились у оружия, в остальных — у персонажа.
+            val table = if (version in 7..8) "character_weapons" else "characters"
             for ((name, definition) in addedColumns(version - 1, version, table)) {
                 // SQLite не добавит к заполненной таблице столбец NOT NULL без DEFAULT:
                 // существующим строкам нечем заполнить новое поле.

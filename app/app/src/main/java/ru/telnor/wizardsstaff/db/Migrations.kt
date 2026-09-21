@@ -221,3 +221,23 @@ val MIGRATION_7_8 = object : Migration(7, 8) {
         SHORT_TRAITS_FILL_SQL.forEach(db::execSQL)
     }
 }
+
+/**
+ * Сохранения персонажа. Столбцы пустые у всех, кто уже лежит в базе: живой лист
+ * тем и отличается от копии, что `saveName` у него пуст.
+ *
+ * Умолчание тут не нужно — столбцы не `NOT NULL`, и старым строкам есть чем
+ * заполниться: ничем.
+ */
+val CHARACTER_SAVES_SQL: List<String> = listOf(
+    "ALTER TABLE `characters` ADD COLUMN `saveName` TEXT",
+    "ALTER TABLE `characters` ADD COLUMN `savedAt` INTEGER",
+    "ALTER TABLE `characters` ADD COLUMN `saveOf` INTEGER",
+)
+
+/** Версия 8 → 9: сохранения персонажа копиями в той же таблице. */
+val MIGRATION_8_9 = object : Migration(8, 9) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        CHARACTER_SAVES_SQL.forEach(db::execSQL)
+    }
+}
