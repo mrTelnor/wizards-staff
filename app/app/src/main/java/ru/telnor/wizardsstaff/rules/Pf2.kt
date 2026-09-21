@@ -46,6 +46,12 @@ fun abilityMod(score: Int): Int = Math.floorDiv(score - 10, 2)
 /** Больше трёх пунктов героизма правила держать не дают. */
 const val HERO_POINTS_MAX = 3
 
+/** Опыт копится до тысячи, после чего уровень растёт, а счётчик начинается заново. */
+const val XP_PER_LEVEL = 1000
+
+/** Клетка поля — пять футов. По ним и ходят за столом. */
+const val FEET_PER_SQUARE = 5
+
 /**
  * Выше трёх ранений не бывает: упав с ранением 3, персонаж получает «при смерти» 4,
  * а это уже смерть. Так что четвёртое ранение просто некому носить.
@@ -71,12 +77,17 @@ data class Armor(
     val strength: Int,          // требование силы
 )
 
-/** Категория брони: от неё зависит, какое владение бронёй идёт в КБ. */
-enum class ArmorCategory(val title: String) {
-    UNARMORED("без брони"),
-    LIGHT("лёгкая"),
-    MEDIUM("средняя"),
-    HEAVY("тяжёлая"),
+/**
+ * Категория брони: от неё зависит, какое владение бронёй идёт в КБ.
+ *
+ * Короткое имя — для галочек в блоке брони: «без брони» в строку с квадратиком
+ * не встаёт, как не встала «выносливость» в плитку характеристики.
+ */
+enum class ArmorCategory(val short: String, val title: String) {
+    UNARMORED("без бр.", "без брони"),
+    LIGHT("лёг.", "лёгкая"),
+    MEDIUM("ср.", "средняя"),
+    HEAVY("тяж.", "тяжёлая"),
 }
 
 /** Навык: своя характеристика у каждого. Знание встречается дважды и с уточнением. */
@@ -115,6 +126,19 @@ enum class Skill(val title: String, val ability: Ability) {
  * Блок нужен, чтобы показать его на вкладке «Черты и снаряжение».
  */
 data class WeaponTraining(val what: String, val rank: Rank)
+
+/**
+ * Чем бьёт оружие. Буква — для квадратика в листе, рядом с владением: в бланке это
+ * такие же галочки «Д», «К», «Р».
+ *
+ * На вывод чисел тип урона не влияет — он важен сопротивлениям чудовищ, а их мы
+ * не моделируем. Но за столом его спрашивают каждый удар, поэтому он в листе есть.
+ */
+enum class DamageType(val badge: String, val title: String) {
+    BLUDGEONING("Д", "дробящее"),
+    PIERCING("К", "колющее"),
+    SLASHING("Р", "режущее"),
+}
 
 /** Испытание. */
 enum class Save(val title: String, val ability: Ability) {
@@ -169,19 +193,81 @@ fun Sheet.speed(): Int {
 }
 
 /**
- * Класс брони. Ловкость идёт в КБ не вся, а до предела надетой брони — без этого
+ * Из чего сложился класс брони. Лист показывает этот разбор под числом, иначе непонятно,
+ * откуда взялись 24.
+ *
+ * Разбор и сам КБ считаются одной функцией нарочно: посчитай их по отдельности — и они
+ * однажды разойдутся, а на экране это будет выглядеть как ошибка в арифметике.
+ */
+data class ArmorClassParts(
+    /** Десятка, с которой начинается любой КБ. */
+    val base: Int,
+    /** Ловкость, уже подрезанная пределом брони. */
+    val dex: Int,
+    val proficiency: Int,
+    /** Бонус самой брони. Ноль, если её нет. */
+    val item: Int,
+    /** Поднятый щит. Ноль, если он опущен, сломан или его нет вовсе. */
+    val shield: Int = 0,
+) {
+    val total: Int get() = base + dex + proficiency + item + shield
+}
+
+/**
+ * Слагаемые КБ. Ловкость идёт в него не вся, а до предела надетой брони — без этого
  * потолка тяжёлый доспех давал бы ловкачу больше, чем позволяют правила.
  */
-fun Sheet.armorClass(): Int {
+fun Sheet.armorClassParts(shieldBonus: Int = 0): ArmorClassParts {
     val category = armor?.category ?: ArmorCategory.UNARMORED
     val rank = armorRanks[category] ?: Rank.UNTRAINED
-    val dex = if (armor == null) mod(Ability.DEX) else minOf(mod(Ability.DEX), armor.dexCap)
-    return 10 + dex + rank.bonus(level) + (armor?.acBonus ?: 0)
+    return ArmorClassParts(
+        base = 10,
+        dex = if (armor == null) mod(Ability.DEX) else minOf(mod(Ability.DEX), armor.dexCap),
+        proficiency = rank.bonus(level),
+        item = armor?.acBonus ?: 0,
+        shield = shieldBonus,
+    )
 }
+
+/**
+ * Класс брони без щита. Щит сюда не входит намеренно: он даёт бонус только после
+ * действия «Поднять щит» и только до начала следующего хода, поэтому его прибавка
+ * приходит снаружи — из листа, где стоит галочка «поднят».
+ */
+fun Sheet.armorClass(): Int = armorClassParts().total
+
+/** Владение той бронёй, которая сейчас надета: именно оно идёт в КБ. */
+fun Sheet.armorRank(): Rank = armorRanks[armor?.category ?: ArmorCategory.UNARMORED] ?: Rank.UNTRAINED
+
+/**
+ * Порог поломки щита: у щитов он всегда половина максимальных ПЗ, вниз.
+ *
+ * Поэтому он и не хранится в базе — вывести его дешевле, чем следить, чтобы вторая
+ * копия не разошлась с первой.
+ */
+fun shieldBrokenThreshold(maxHp: Int): Int = maxHp / 2
+
+/**
+ * Сломан ли щит. Сломанный не даёт бонуса к КБ и блокировать им нельзя, пока
+ * не починят выше порога.
+ *
+ * Незаполненный щит (максимум ноль) сломанным не считается: ноль в листе значит
+ * «ПЗ не вписаны», а не «разбит».
+ */
+fun shieldBroken(hp: Int, maxHp: Int): Boolean = maxHp > 0 && hp <= shieldBrokenThreshold(maxHp)
 
 /** Испытание: характеристика, владение, бонус предмета. */
 fun Sheet.saveMod(save: Save): Int =
     mod(save.ability) + (saves[save] ?: Rank.UNTRAINED).bonus(level) + (saveItems[save] ?: 0)
+
+/**
+ * Инициатива. Бросается Восприятием — своего владения у неё не бывает, — а прибавка
+ * приходит от черт вроде «Невероятной инициативы».
+ *
+ * Прибавку движок не выводит: черты у нас хранятся названиями, а не правилами,
+ * и заводить справочник черт ради одного числа незачем. Она приходит из листа.
+ */
+fun Sheet.initiativeMod(bonus: Int): Int = perceptionMod() + bonus
 
 /** Восприятие считается как испытание, только по мудрости. */
 fun Sheet.perceptionMod(): Int =
@@ -217,6 +303,7 @@ data class Weapon(
     val potency: Int = 0,        // руна мощи: прибавка к броску атаки
     val finesse: Boolean = false, // фехтовальное: можно бить ловкостью вместо силы
     val traits: String = "",
+    val damageType: DamageType = DamageType.BLUDGEONING,
 )
 
 /**

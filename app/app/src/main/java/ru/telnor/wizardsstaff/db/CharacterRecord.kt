@@ -49,6 +49,12 @@ data class CharacterRecord(
     val armorRanks: Map<ArmorCategory, Rank>,
     val perception: Rank,
     val perceptionItem: Int,
+    /**
+     * Прибавка к броскам инициативы от черт: «Невероятная инициатива» даёт 2.
+     * Вывести её неоткуда — черты лежат названиями, — поэтому число хранится.
+     */
+    @ColumnInfo(defaultValue = "0")
+    val initiativeBonus: Int = 0,
     val saves: Map<Save, Rank>,
     val saveItems: Map<Save, Int>,
     val skills: Map<Skill, Rank>,
@@ -83,6 +89,27 @@ data class CharacterRecord(
     /** Щит: КБ, который он даёт, и его твёрдость. Ноль — щита нет. */
     val shieldAc: Int,
     val shieldHardness: Int,
+    /**
+     * ПЗ щита: сколько осталось и сколько бывает целиком. Меняются кнопками в листе,
+     * поэтому лежат в базе рядом с остальным состоянием боя.
+     *
+     * Порога поломки здесь нет намеренно: у щитов он всегда половина максимума,
+     * и считает его `shieldBrokenThreshold` в `rules/Pf2.kt`.
+     *
+     * Умолчания нужны базе: столбцы добавлены в версии 4 поверх заполненных листов.
+     * В бланке Сильврина эти поля пустые, числа взяты по решению автора; править их
+     * будет отдельный лист снаряжения, когда до него дойдут руки.
+     */
+    @ColumnInfo(defaultValue = "0")
+    val shieldHp: Int = 0,
+    @ColumnInfo(defaultValue = "0")
+    val shieldMaxHp: Int = 0,
+    /**
+     * Поднят ли щит. Пока поднят, его КБ идёт в общий класс брони; держится он
+     * до начала следующего хода, поэтому и меняется галочкой в бою, а не в редакторе.
+     */
+    @ColumnInfo(defaultValue = "0")
+    val shieldRaised: Boolean = false,
 
     val platinum: Int,
     val gold: Int,

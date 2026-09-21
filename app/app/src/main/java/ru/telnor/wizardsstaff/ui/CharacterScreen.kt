@@ -62,7 +62,12 @@ fun CharacterScreen(
         when {
             character == null -> EmptyCharacters()
             tab == CharacterTab.Overview ->
-                CharacterOverview(character, Modifier.fillMaxSize(), actions)
+                CharacterOverview(
+                    character = character,
+                    modifier = Modifier.fillMaxSize(),
+                    actions = actions,
+                    onOpenSpells = { tab = CharacterTab.Spells },
+                )
             else -> TabComing(tab)
         }
     }

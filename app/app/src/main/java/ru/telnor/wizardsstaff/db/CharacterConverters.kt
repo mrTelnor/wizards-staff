@@ -3,6 +3,7 @@ package ru.telnor.wizardsstaff.db
 import androidx.room.TypeConverter
 import ru.telnor.wizardsstaff.rules.Ability
 import ru.telnor.wizardsstaff.rules.ArmorCategory
+import ru.telnor.wizardsstaff.rules.DamageType
 import ru.telnor.wizardsstaff.rules.Rank
 import ru.telnor.wizardsstaff.rules.Save
 import ru.telnor.wizardsstaff.rules.Skill
@@ -72,6 +73,13 @@ class CharacterConverters {
         Ability.entries.firstOrNull { it.name == name } ?: Ability.STR
 
     // --- степени владения ---
+
+    @TypeConverter
+    fun fromDamageType(value: DamageType): String = value.name
+
+    @TypeConverter
+    fun toDamageType(name: String): DamageType =
+        DamageType.entries.firstOrNull { it.name == name } ?: DamageType.BLUDGEONING
 
     @TypeConverter
     fun fromRank(value: Rank): String = value.name

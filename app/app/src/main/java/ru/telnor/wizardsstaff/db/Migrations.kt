@@ -99,3 +99,125 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
         BATTLE_STATE_SQL.forEach(db::execSQL)
     }
 }
+
+/**
+ * ПЗ щита: сколько осталось и сколько бывает целиком. Как и состояние боя, добавляются
+ * столбцами к уже заполненным листам, поэтому у каждого есть умолчание.
+ *
+ * Порога поломки среди них нет: он всегда половина максимума и считается движком.
+ */
+val SHIELD_HP_SQL: List<String> = listOf(
+    "ALTER TABLE `characters` ADD COLUMN `shieldHp` INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE `characters` ADD COLUMN `shieldMaxHp` INTEGER NOT NULL DEFAULT 0",
+)
+
+/** Версия 3 → 4: ПЗ щита. */
+val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        SHIELD_HP_SQL.forEach(db::execSQL)
+    }
+}
+
+/**
+ * Поднят ли щит. Тоже столбцом к готовым листам, тоже с умолчанием: опущен.
+ */
+val SHIELD_RAISED_SQL: List<String> = listOf(
+    "ALTER TABLE `characters` ADD COLUMN `shieldRaised` INTEGER NOT NULL DEFAULT 0",
+)
+
+/**
+ * Версия 4 → 5: галочка «щит поднят», а заодно правка данных.
+ *
+ * Правка данных в переезде — случай особый и, вообще говоря, нежелательный. Здесь она
+ * оправдана: ПЗ щита появились в версии 4 нулями, потому что в бланке их нет, а число
+ * (20) автор назвал уже после. Засев их не поставит — он срабатывает только на пустой
+ * базе, а лист Сильврина в ней уже лежит. Условие `WHERE shieldMaxHp = 0` бережёт тех,
+ * кто успел проставить ПЗ руками.
+ */
+val SHIELD_HP_FILL_SQL =
+    "UPDATE characters SET shieldMaxHp = 20, shieldHp = 20 " +
+        "WHERE shieldMaxHp = 0 AND (shieldAc > 0 OR shieldHardness > 0)"
+
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        SHIELD_RAISED_SQL.forEach(db::execSQL)
+        db.execSQL(SHIELD_HP_FILL_SQL)
+    }
+}
+
+/** Прибавка к инициативе. Столбцом к готовым листам, с умолчанием: прибавки нет. */
+val INITIATIVE_SQL: List<String> = listOf(
+    "ALTER TABLE `characters` ADD COLUMN `initiativeBonus` INTEGER NOT NULL DEFAULT 0",
+)
+
+/**
+ * Версия 5 → 6: прибавка к инициативе, и сразу проставленная тем, у кого она есть.
+ *
+ * Правка данных здесь по той же причине, что и у ПЗ щита: засев срабатывает только
+ * на пустой базе, а листы в ней уже лежат. Но условие честнее: двойка достаётся
+ * не всем подряд, а ровно тем персонажам, у кого в чертах записана «Невероятная
+ * инициатива» — та самая черта, которая её и даёт.
+ */
+val INITIATIVE_FILL_SQL =
+    "UPDATE characters SET initiativeBonus = 2 WHERE initiativeBonus = 0 AND id IN " +
+        "(SELECT characterId FROM character_feats WHERE name = 'Невероятная инициатива')"
+
+val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        INITIATIVE_SQL.forEach(db::execSQL)
+        db.execSQL(INITIATIVE_FILL_SQL)
+    }
+}
+
+/** Тип урона у оружия. Столбцом к уже записанному, с умолчанием «дробящее». */
+val DAMAGE_TYPE_SQL: List<String> = listOf(
+    "ALTER TABLE `character_weapons` ADD COLUMN `damageType` TEXT NOT NULL DEFAULT 'BLUDGEONING'",
+)
+
+/**
+ * Версия 6 → 7: чем бьёт оружие, и попутно правка засеянных данных.
+ *
+ * Правка нужна по той же причине, что и прежние: засев срабатывает только на пустой
+ * базе, а оружие в ней уже лежит. Тип урона когтей и настоящее имя молота иначе
+ * остались бы старыми навсегда.
+ *
+ * Такие правки — временная мера. Как только появится лист снаряжения, оружие начнёт
+ * редактироваться руками, и чинить его миграциями больше не придётся.
+ */
+val WEAPON_FIX_SQL: List<String> = listOf(
+    "UPDATE character_weapons SET damageType = 'SLASHING' WHERE name = 'Когти'",
+    "UPDATE character_weapons SET name = 'Двуручный молот +1', " +
+        "shortName = 'двуручным молотом' " +
+        "WHERE name = 'Двуручный молот кошачьей ярости +1'",
+)
+
+val MIGRATION_6_7 = object : Migration(6, 7) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        DAMAGE_TYPE_SQL.forEach(db::execSQL)
+        WEAPON_FIX_SQL.forEach(db::execSQL)
+    }
+}
+
+/** Короткие свойства оружия. Столбцом к уже записанному, с пустым умолчанием. */
+val SHORT_TRAITS_SQL: List<String> = listOf(
+    "ALTER TABLE `character_weapons` ADD COLUMN `shortTraits` TEXT NOT NULL DEFAULT ''",
+)
+
+/**
+ * Версия 7 → 8: сокращения свойств оружия, и снова правка засеянного.
+ *
+ * Причина прежняя: засев на непустой базе не срабатывает. Условие узкое — только
+ * то оружие, у которого свойства записаны ровно как в засеве.
+ */
+val SHORT_TRAITS_FILL_SQL: List<String> = listOf(
+    "UPDATE character_weapons SET shortTraits = 'безоруж., быстр., фехт.' " +
+        "WHERE traits = 'безоружно, быстрое, фехтовальное'",
+    "UPDATE character_weapons SET shortTraits = 'толк.' WHERE traits = 'толкающее'",
+)
+
+val MIGRATION_7_8 = object : Migration(7, 8) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        SHORT_TRAITS_SQL.forEach(db::execSQL)
+        SHORT_TRAITS_FILL_SQL.forEach(db::execSQL)
+    }
+}

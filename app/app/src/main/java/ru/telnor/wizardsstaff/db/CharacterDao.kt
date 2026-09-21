@@ -91,17 +91,38 @@ interface CharacterDao {
     @Query("UPDATE characters SET wounded = MAX(0, MIN(:limit, wounded + :delta)) WHERE id = :id")
     suspend fun addWounded(id: Long, delta: Int, limit: Int)
 
+    /** ПЗ щита: от нуля до его максимума. Блок щитом отнимает их десятками. */
+    @Query("UPDATE characters SET shieldHp = MAX(0, MIN(shieldMaxHp, shieldHp + :delta)) WHERE id = :id")
+    suspend fun addShieldHp(id: Long, delta: Int)
+
+    /** «Щит поднят» — галочка, как и «при смерти». */
+    @Query("UPDATE characters SET shieldRaised = :raised WHERE id = :id")
+    suspend fun setShieldRaised(id: Long, raised: Boolean)
+
+    /**
+     * Опыт. Здесь не прибавка, а готовое число: его набирают в поле целиком,
+     * и гонки двух быстрых нажатий тут быть не может.
+     */
+    @Query("UPDATE characters SET xp = :xp WHERE id = :id")
+    suspend fun setXp(id: Long, xp: Int)
+
     /** «При смерти» — галочка, а не счётчик: так попросил автор листа. */
     @Query("UPDATE characters SET dying = :dying WHERE id = :id")
     suspend fun setDying(id: Long, dying: Boolean)
 
     /**
-     * «Полностью здоров»: ПЗ до максимума, временные ПЗ и ранения в ноль, «при смерти»
-     * снято. Одним запросом, а не пятью — после ночного отдыха всё это возвращается
-     * разом, и промежуточных состояний вроде «здоров, но при смерти» быть не должно.
+     * «Полностью здоров»: ПЗ до максимума, ранения в ноль, «при смерти» снято.
+     * Одним запросом, а не четырьмя — после отдыха всё это возвращается разом,
+     * и промежуточных состояний вроде «здоров, но при смерти» быть не должно.
+     *
+     * Временные ПЗ обычно сбрасываются вместе со всем, но не всегда: их даёт заклинание
+     * со своим сроком, и оно может пережить отдых. Поэтому решение принимает человек
+     * в окне подтверждения, а запрос остаётся один.
      */
     @Query(
-        "UPDATE characters SET currentHp = maxHp, tempHp = 0, wounded = 0, dying = 0 WHERE id = :id"
+        "UPDATE characters SET currentHp = maxHp, " +
+            "tempHp = CASE WHEN :keepTempHp THEN tempHp ELSE 0 END, " +
+            "wounded = 0, dying = 0 WHERE id = :id"
     )
-    suspend fun heal(id: Long)
+    suspend fun heal(id: Long, keepTempHp: Boolean)
 }

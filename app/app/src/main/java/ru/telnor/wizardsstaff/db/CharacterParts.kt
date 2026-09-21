@@ -1,9 +1,11 @@
 package ru.telnor.wizardsstaff.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import ru.telnor.wizardsstaff.rules.DamageType
 import ru.telnor.wizardsstaff.rules.Rank
 import ru.telnor.wizardsstaff.rules.Weapon
 
@@ -49,6 +51,21 @@ data class CharacterWeaponRecord(
     val potency: Int,
     val finesse: Boolean,
     val traits: String,
+    /**
+     * Те же свойства короткими словами: «безоруж., быстр., фехт.». Хранятся рядом
+     * с полными по той же причине, что и короткое имя оружия: сократить «фехтовальное»
+     * до «фехт.» может только человек, вывести это неоткуда.
+     *
+     * Пусто — показываются полные: так ведёт себя оружие, добавленное до версии 8.
+     */
+    @ColumnInfo(defaultValue = "")
+    val shortTraits: String = "",
+    /**
+     * Чем бьёт: дробящее, колющее или режущее. Умолчание нужно базе — столбец
+     * добавлен в версии 7 поверх уже записанного оружия.
+     */
+    @ColumnInfo(defaultValue = "BLUDGEONING")
+    val damageType: DamageType = DamageType.BLUDGEONING,
     val position: Int,
 ) {
     /** Оружие в том виде, в каком его понимает движок правил. */
@@ -59,6 +76,7 @@ data class CharacterWeaponRecord(
         potency = potency,
         finesse = finesse,
         traits = traits,
+        damageType = damageType,
     )
 }
 

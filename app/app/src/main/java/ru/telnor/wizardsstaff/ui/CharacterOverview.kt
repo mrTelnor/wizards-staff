@@ -4,14 +4,14 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -19,9 +19,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -29,38 +32,35 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.withTimeoutOrNull
 import ru.telnor.wizardsstaff.db.CharacterRecord
 import ru.telnor.wizardsstaff.db.CharacterSheet
-import ru.telnor.wizardsstaff.db.CharacterWeaponRecord
 import ru.telnor.wizardsstaff.db.silvrinSeed
 import ru.telnor.wizardsstaff.rules.Ability
 import ru.telnor.wizardsstaff.rules.HERO_POINTS_MAX
 import ru.telnor.wizardsstaff.rules.Rank
-import ru.telnor.wizardsstaff.rules.Save
 import ru.telnor.wizardsstaff.rules.Sheet
 import ru.telnor.wizardsstaff.rules.WOUNDED_MAX
-import ru.telnor.wizardsstaff.rules.armorClass
-import ru.telnor.wizardsstaff.rules.attackMod
-import ru.telnor.wizardsstaff.rules.classDifficulty
-import ru.telnor.wizardsstaff.rules.damageFormula
+import ru.telnor.wizardsstaff.rules.XP_PER_LEVEL
 import ru.telnor.wizardsstaff.rules.mod
-import ru.telnor.wizardsstaff.rules.perceptionMod
-import ru.telnor.wizardsstaff.rules.rollFormula
 import ru.telnor.wizardsstaff.rules.saveMod
-import ru.telnor.wizardsstaff.rules.speed
-import ru.telnor.wizardsstaff.rules.spellDifficulty
 import ru.telnor.wizardsstaff.ui.theme.PosohDimens
 import ru.telnor.wizardsstaff.ui.theme.WizardsStaffTheme
 
@@ -68,6 +68,7 @@ import ru.telnor.wizardsstaff.ui.theme.WizardsStaffTheme
  * Вкладка «Обзор» листа персонажа.
  *
  * Порядок блоков: кто он такой, чем бросает, сколько в нём жизни, чем защищён, чем бьёт.
+ * Класс брони со щитом идут отдельным блоком сразу за жизнью, см. `ArmorCard.kt`.
  * Характеристики и жизнь подняты наверх намеренно: за столом смотрят чаще всего туда,
  * а жизнь ещё и правят по нескольку раз за бой.
  *
@@ -80,6 +81,12 @@ import ru.telnor.wizardsstaff.ui.theme.WizardsStaffTheme
 private val BlockGap = 10.dp
 
 /**
+ * Крупное число листа: уровень, героизм, модификатор, ПЗ, КБ, счётчики состояния.
+ * Тем же кеглем набраны знаки на кнопках, которые эти числа правят.
+ */
+val BigNumber = 26.sp
+
+/**
  * Что лист умеет менять. Правки уходят в базу прибавкой, а границы держит она же,
  * поэтому здесь только «на сколько», без «до скольки».
  */
@@ -89,7 +96,12 @@ data class SheetActions(
     val tempHp: (Int) -> Unit = {},
     val wounded: (Int) -> Unit = {},
     val dying: (Boolean) -> Unit = {},
-    val heal: () -> Unit = {},
+    /** Отдых. Аргумент — беречь ли временные ПЗ: их мог дать эффект, переживший отдых. */
+    val heal: (Boolean) -> Unit = {},
+    val shieldHp: (Int) -> Unit = {},
+    val shieldRaised: (Boolean) -> Unit = {},
+    /** Опыт вводят числом целиком, а не прибавкой: это поле ввода, а не счётчик. */
+    val xp: (Int) -> Unit = {},
 )
 
 @Composable
@@ -97,20 +109,26 @@ fun CharacterOverview(
     character: CharacterSheet,
     modifier: Modifier = Modifier,
     actions: SheetActions = SheetActions(),
+    onOpenSpells: () -> Unit = {},
 ) {
     val sheet = character.sheet
+
+    val focus = LocalFocusManager.current
 
     BoxWithConstraints(modifier) {
         // На планшете в альбомной всё встаёт в ряд; в портретной и на телефоне плитки
         // защиты переносятся, а блок жизни делится надвое.
         val wide = maxWidth >= 900.dp
-        val defenceColumns = if (wide) 4 else 2
 
         Column(
             verticalArrangement = Arrangement.spacedBy(BlockGap),
             modifier = Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
+                // Тычок в пустое место листа снимает курсор с поля опыта и убирает
+                // клавиатуру. Нажатия по кнопкам и полю сюда не доходят: их забирают
+                // сами кнопки, а прокрутка отменяет жест.
+                .pointerInput(Unit) { detectTapGestures { focus.clearFocus() } }
                 .padding(horizontal = PosohDimens.screenPadding, vertical = PosohDimens.spaceM),
         ) {
             CharacterHeader(character, actions)
@@ -130,27 +148,13 @@ fun CharacterOverview(
 
             LifeCard(character.record, actions, wide)
 
-            TileGrid(defenceTiles(sheet), defenceColumns) { tile ->
-                SheetTile(
-                    label = tile.label,
-                    value = tile.value,
-                    suffix = tile.suffix,
-                    modifier = Modifier.weight(1f),
-                )
-            }
+            ArmorCard(character, actions)
 
-            val attacks = character.weapons.flatMap { weaponRows(sheet, it) }
-            val saves = saveRows(sheet)
+            SavesRow(character)
 
-            if (wide) {
-                Row(horizontalArrangement = Arrangement.spacedBy(PosohDimens.spaceM)) {
-                    if (attacks.isNotEmpty()) RowsCard("Атаки", attacks, Modifier.weight(1f))
-                    RowsCard("Испытания и восприятие", saves, Modifier.weight(1f))
-                }
-            } else {
-                if (attacks.isNotEmpty()) RowsCard("Атаки", attacks, Modifier.fillMaxWidth())
-                RowsCard("Испытания и восприятие", saves, Modifier.fillMaxWidth())
-            }
+            StatsCard(character, actions)
+
+            AttackRows(character, onOpenSpells)
         }
     }
 }
@@ -190,8 +194,8 @@ private fun CharacterHeader(character: CharacterSheet, actions: SheetActions) {
                 Text(record.name, style = MaterialTheme.typography.titleLarge)
                 Text(
                     text = subtitle,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = scheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                    color = scheme.onSurface,
                 )
             }
             Spacer(Modifier.width(PosohDimens.spaceM))
@@ -202,12 +206,22 @@ private fun CharacterHeader(character: CharacterSheet, actions: SheetActions) {
                 horizontalAlignment = Alignment.Start,
                 verticalArrangement = Arrangement.spacedBy(PosohDimens.spaceS),
             ) {
-                CornerTile(
-                    label = "Уровень",
-                    value = record.level.toString(),
-                    background = scheme.surfaceVariant,
-                    content = scheme.onSurface,
-                )
+                // Набран опыт на новый уровень — плитка загорается золотым и рядом
+                // с числом встаёт «+». Сам уровень не растёт: почему, написано
+                // в начале `StatsCard.kt`.
+                val levelUp = record.xp >= XP_PER_LEVEL
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CornerTile(
+                        label = "Уровень",
+                        value = record.level.toString(),
+                        background = if (levelUp) scheme.tertiaryContainer else scheme.surfaceVariant,
+                        content = if (levelUp) scheme.onTertiaryContainer else scheme.onSurface,
+                    )
+                    if (levelUp) {
+                        Spacer(Modifier.width(PosohDimens.spaceS))
+                        LevelUpButton()
+                    }
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     CornerTile(
                         label = "Героизм",
@@ -217,14 +231,16 @@ private fun CharacterHeader(character: CharacterSheet, actions: SheetActions) {
                     )
                     Spacer(Modifier.width(PosohDimens.spaceS))
                     Column(verticalArrangement = Arrangement.spacedBy(PosohDimens.spaceXs)) {
-                        StepperButton(
+                        TapStepperButton(
                             label = "+",
                             enabled = record.heroPoints < HERO_POINTS_MAX,
+                            fontSize = BigNumber,
                             onClick = { actions.heroPoints(1) },
                         )
-                        StepperButton(
+                        TapStepperButton(
                             label = "−",
                             enabled = record.heroPoints > 0,
+                            fontSize = BigNumber,
                             onClick = { actions.heroPoints(-1) },
                         )
                     }
@@ -249,7 +265,34 @@ private fun CornerTile(label: String, value: String, background: Color, content:
             modifier = Modifier.fillMaxWidth().height(62.dp),
         ) {
             Text(label.uppercase(), style = MaterialTheme.typography.labelSmall)
-            Text(text = value, style = MaterialTheme.typography.displaySmall.copy(fontSize = 26.sp))
+            Text(text = value, style = MaterialTheme.typography.displaySmall.copy(fontSize = BigNumber))
+        }
+    }
+}
+
+/**
+ * Кнопка повышения уровня. Появляется рядом с уровнем, когда набрана тысяча опыта.
+ *
+ * Нажатие пока ничего не делает: страницы повышения ещё нет. Когда появится —
+ * подключится сюда одной строкой.
+ */
+@Composable
+private fun LevelUpButton() {
+    val scheme = MaterialTheme.colorScheme
+    Card(
+        shape = CircleShape,
+        colors = CardDefaults.cardColors(
+            containerColor = scheme.tertiaryContainer,
+            contentColor = scheme.onTertiaryContainer,
+        ),
+        border = BorderStroke(TileBorder, scheme.tertiary),
+        modifier = Modifier.size(StepperSize),
+    ) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(
+                text = "+",
+                style = MaterialTheme.typography.displaySmall.copy(fontSize = BigNumber),
+            )
         }
     }
 }
@@ -265,9 +308,11 @@ private fun AbilityTile(ability: Ability, sheet: Sheet, key: Boolean, modifier: 
             containerColor = if (key) scheme.primaryContainer else scheme.surface,
             contentColor = if (key) scheme.onPrimaryContainer else scheme.onSurface,
         ),
+        // Такая же рамка, как у испытаний: по плитке характеристики тоже можно будет
+        // нажать — чтобы бросить чистую проверку этой характеристики.
         border = BorderStroke(
-            width = 1.dp,
-            color = if (key) scheme.primary.copy(alpha = 0.45f) else scheme.outlineVariant,
+            width = TileBorder,
+            color = if (key) scheme.primary else scheme.outline,
         ),
         modifier = modifier,
     ) {
@@ -279,19 +324,22 @@ private fun AbilityTile(ability: Ability, sheet: Sheet, key: Boolean, modifier: 
                 // Трёхбуквенное имя: «ВЫНОСЛИВОСТЬ» в узкую плитку не встаёт.
                 text = ability.short,
                 style = MaterialTheme.typography.labelSmall,
-                color = if (key) scheme.onPrimaryContainer else scheme.onSurfaceVariant,
+                color = if (key) scheme.onPrimaryContainer else scheme.onSurface,
                 maxLines = 1,
             )
             Text(
                 text = signed(sheet.mod(ability)),
-                style = MaterialTheme.typography.displaySmall.copy(fontSize = 24.sp),
+                style = MaterialTheme.typography.displaySmall.copy(fontSize = BigNumber),
                 maxLines = 1,
             )
             Text(
                 // Ключевая подписана: по ней считаются классовая СЛ и магия.
                 text = if (key) "$score · ключ." else score.toString(),
-                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                color = if (key) scheme.onPrimaryContainer else scheme.onSurfaceVariant,
+                style = MaterialTheme.typography.displaySmall.copy(
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                ),
+                color = if (key) scheme.onPrimaryContainer else scheme.onSurface,
                 maxLines = 1,
             )
         }
@@ -346,30 +394,42 @@ private fun LifeDivider() {
 private fun HealthPart(record: CharacterRecord, actions: SheetActions, modifier: Modifier = Modifier) {
     val scheme = MaterialTheme.colorScheme
     Column(modifier) {
+        // По центру своего раздела, как и остальные надписи листа.
         Text(
             text = "ЗДОРОВЬЕ",
             style = MaterialTheme.typography.labelSmall,
-            color = scheme.onSurfaceVariant,
+            color = scheme.onSurface,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
         )
         Spacer(Modifier.height(PosohDimens.spaceXs))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = record.currentHp.toString(),
-                style = MaterialTheme.typography.displaySmall.copy(fontSize = 30.sp),
+                style = MaterialTheme.typography.displaySmall.copy(fontSize = BigNumber),
                 maxLines = 1,
             )
             Spacer(Modifier.width(PosohDimens.spaceXs))
             Text(
                 text = "/ ${record.maxHp}",
-                style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp),
-                color = scheme.onSurfaceVariant,
+                style = MaterialTheme.typography.displaySmall.copy(
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                ),
+                color = scheme.onSurface,
             )
             Spacer(Modifier.width(PosohDimens.spaceM))
             HealButton(actions.heal)
             Spacer(Modifier.weight(1f))
-            HoldStepperButton("−", enabled = record.currentHp > 0) { actions.hp(-1) }
+            HoldStepperButton("−", enabled = record.currentHp > 0, fontSize = BigNumber) {
+                actions.hp(-1)
+            }
             Spacer(Modifier.width(PosohDimens.spaceS))
-            HoldStepperButton("+", enabled = record.currentHp < record.maxHp) { actions.hp(1) }
+            HoldStepperButton(
+                label = "+",
+                enabled = record.currentHp < record.maxHp,
+                fontSize = BigNumber,
+            ) { actions.hp(1) }
         }
         Spacer(Modifier.height(PosohDimens.spaceS))
         Box(
@@ -393,49 +453,60 @@ private fun HealthPart(record: CharacterRecord, actions: SheetActions, modifier:
     }
 }
 
-/** Временные ПЗ, ранения и «при смерти». */
+/**
+ * Ширина, отведённая числу счётчика. Считана по трёхзначному значению: временные ПЗ
+ * от заклинания бывают и за сотню, а прыгающие туда-сюда кнопки посреди боя хуже,
+ * чем немного пустого места слева от нуля.
+ */
+private val CounterValueWidth = 44.dp
+
+/**
+ * Высота строки со значением. Одна на все три части, чтобы числа и галочка стояли
+ * на одной линии: у галочки своя высота под палец, у счётчиков — своя, и без общей
+ * высоты они разъехались бы по вертикали.
+ */
+private val StateRowHeight = PosohDimens.minTouchTarget
+
+/**
+ * Временные ПЗ, ранения и «при смерти». Три части одного блока: надписи в одну линию,
+ * значения под ними тоже в одну.
+ *
+ * Разделителей между ними нет — по решению автора: в блоке брони они отделяют
+ * разные сущности, а здесь всё это одно состояние в бою.
+ */
 @Composable
 private fun StatePart(record: CharacterRecord, actions: SheetActions, modifier: Modifier = Modifier) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = modifier) {
-        LifeItem(label = "Врем. ПЗ", modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = record.tempHp.toString(),
-                    style = MaterialTheme.typography.displaySmall.copy(fontSize = 24.sp),
-                    maxLines = 1,
-                )
-                Spacer(Modifier.weight(1f))
-                // Временные ПЗ приходят десятками от заклинаний, поэтому тоже с удержанием.
-                HoldStepperButton("−", enabled = record.tempHp > 0) { actions.tempHp(-1) }
-                Spacer(Modifier.width(PosohDimens.spaceXs))
-                HoldStepperButton("+", enabled = true) { actions.tempHp(1) }
-            }
+    Row(verticalAlignment = Alignment.Top, modifier = modifier) {
+        LabeledPart(label = "Временные ПЗ", modifier = Modifier.weight(1f)) {
+            Counter(
+                value = record.tempHp,
+                minus = record.tempHp > 0,
+                // Временные ПЗ приходят десятками от заклинаний, поэтому с удержанием.
+                plus = true,
+                hold = true,
+                onStep = actions.tempHp,
+            )
         }
-        Spacer(Modifier.width(PosohDimens.spaceM))
-        LifeItem(label = "Ранения", modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = record.wounded.toString(),
-                    style = MaterialTheme.typography.displaySmall.copy(fontSize = 24.sp),
-                    maxLines = 1,
-                )
-                Spacer(Modifier.weight(1f))
+        LabeledPart(label = "Ранения", modifier = Modifier.weight(1f)) {
+            Counter(
+                value = record.wounded,
+                minus = record.wounded > 0,
+                plus = record.wounded < WOUNDED_MAX,
                 // Ранений всего три, удержание тут ни к чему.
-                StepperButton("−", enabled = record.wounded > 0) { actions.wounded(-1) }
-                Spacer(Modifier.width(PosohDimens.spaceXs))
-                StepperButton("+", enabled = record.wounded < WOUNDED_MAX) { actions.wounded(1) }
-            }
+                hold = false,
+                onStep = actions.wounded,
+            )
         }
-        Spacer(Modifier.width(PosohDimens.spaceM))
-        LifeItem(label = "При смерти", modifier = Modifier.weight(1f)) {
+        LabeledPart(label = "При смерти", modifier = Modifier.weight(1f)) {
             Row(
+                horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.heightIn(min = PosohDimens.minTouchTarget),
+                modifier = Modifier.fillMaxWidth().height(StateRowHeight),
             ) {
                 Checkbox(checked = record.dying, onCheckedChange = actions.dying)
                 Text(
                     text = "Да",
-                    style = MaterialTheme.typography.titleSmall,
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
                     color = if (record.dying) {
                         MaterialTheme.colorScheme.error
                     } else {
@@ -448,211 +519,117 @@ private fun StatePart(record: CharacterRecord, actions: SheetActions, modifier: 
     }
 }
 
-/**
- * «Полностью здоров»: одно нажатие возвращает персонажа в порядок после отдыха.
- * Стоит сразу за числами здоровья — то, что она чинит, начинается именно с них.
- */
+/** Число и пара кнопок к нему, по центру своей части. */
 @Composable
-private fun HealButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
-    OutlinedButton(
-        onClick = onClick,
-        shape = RoundedCornerShape(22.dp),
-        contentPadding = PaddingValues(horizontal = PosohDimens.spaceL, vertical = 0.dp),
-        modifier = modifier.heightIn(min = PosohDimens.minTouchTarget),
-    ) {
-        Text("Полностью здоров", style = MaterialTheme.typography.labelLarge, maxLines = 1)
-    }
-}
-
-/** Подписанный кусочек блока жизни: надпись сверху, содержимое под ней. */
-@Composable
-private fun LifeItem(label: String, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    Column(modifier) {
-        Text(
-            text = label.uppercase(),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-        )
-        Spacer(Modifier.height(PosohDimens.spaceXs))
-        content()
-    }
-}
-
-/** Круглая кнопка счётчика. Такая же, как у числа костей на экране «Броски». */
-@Composable
-private fun StepperButton(label: String, enabled: Boolean, onClick: () -> Unit) {
-    val scheme = MaterialTheme.colorScheme
-    Card(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = Modifier.size(34.dp),
-        shape = CircleShape,
-        colors = CardDefaults.cardColors(
-            containerColor = scheme.surfaceContainer,
-            contentColor = scheme.onSurfaceVariant,
-        ),
-    ) {
-        StepperLabel(label)
-    }
-}
-
-/** Пауза перед тем, как удержание начнёт повторять шаги. */
-private const val HOLD_START_MS = 400L
-
-/** Начальная и самая быстрая пауза между шагами при удержании. */
-private const val HOLD_STEP_MS = 120L
-private const val HOLD_FAST_MS = 30L
-
-/**
- * Кнопка счётчика, которая повторяет шаг при удержании: ПЗ бывает под сотню, и набирать
- * их по одному нажатию — занятие на весь ход.
- *
- * Первый шаг делается по отпусканию, а не по нажатию: палец, опустившийся на кнопку ради
- * прокрутки списка, не должен отнимать здоровье. Если его увели прокруткой, нажатие
- * отменяется и не считается вовсе.
- *
- * Чем дольше держат, тем быстрее идут шаги: от 120 мс к 30 мс. Так и единицу поймать можно,
- * и полсотни ПЗ отмотать за пару секунд.
- */
-@Composable
-private fun HoldStepperButton(label: String, enabled: Boolean, onStep: () -> Unit) {
-    val scheme = MaterialTheme.colorScheme
-    // Держим отдельно от состояния Compose: перерисовывать кнопку из-за этого незачем.
-    val repeated = remember { booleanArrayOf(false) }
-
-    Card(
-        shape = CircleShape,
-        colors = CardDefaults.cardColors(
-            containerColor = if (enabled) scheme.surfaceContainer else scheme.surfaceContainerLow,
-            contentColor = if (enabled) {
-                scheme.onSurfaceVariant
-            } else {
-                scheme.onSurfaceVariant.copy(alpha = 0.38f)
-            },
-        ),
-        modifier = Modifier
-            .size(34.dp)
-            .pointerInput(enabled) {
-                if (!enabled) return@pointerInput
-                detectTapGestures(
-                    onPress = {
-                        repeated[0] = false
-                        // Ждём: отпустили быстро — это обычное нажатие, оно уйдёт в onTap.
-                        val released = withTimeoutOrNull(HOLD_START_MS) { tryAwaitRelease() }
-                        if (released == null) {
-                            repeated[0] = true
-                            var pause = HOLD_STEP_MS
-                            while (true) {
-                                onStep()
-                                val done = withTimeoutOrNull(pause) { tryAwaitRelease() }
-                                if (done != null) break
-                                pause = maxOf(HOLD_FAST_MS, pause - 10L)
-                            }
-                        }
-                    },
-                    onTap = { if (!repeated[0]) onStep() },
-                )
-            },
-    ) {
-        StepperLabel(label)
-    }
-}
-
-/** Знак на кнопке счётчика, по центру. */
-@Composable
-private fun StepperLabel(label: String) {
-    Box(Modifier.fillMaxWidth().height(34.dp), contentAlignment = Alignment.Center) {
-        Text(label, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
-    }
-}
-
-/** Карточка со списком бросаемых строк. */
-@Composable
-private fun RowsCard(title: String, rows: List<RollRow>, modifier: Modifier = Modifier) {
-    SheetCard(title = title, modifier = modifier) {
-        rows.forEach { RollRowItem(it) }
-    }
-}
-
-/**
- * Раскладывает плитки рядами по `columns` штук. Последний ряд добивается пустотой,
- * иначе две плитки в ряду из четырёх растянулись бы на всю ширину.
- */
-@Composable
-private fun <T> TileGrid(
-    items: List<T>,
-    columns: Int,
-    tile: @Composable RowScope.(T) -> Unit,
+private fun Counter(
+    value: Int,
+    minus: Boolean,
+    plus: Boolean,
+    hold: Boolean,
+    onStep: (Int) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(BlockGap)) {
-        items.chunked(columns).forEach { chunk ->
-            Row(horizontalArrangement = Arrangement.spacedBy(BlockGap)) {
-                chunk.forEach { tile(it) }
-                repeat(columns - chunk.size) { Spacer(Modifier.weight(1f)) }
-            }
+    Row(
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().height(StateRowHeight),
+    ) {
+        Text(
+            text = value.toString(),
+            style = MaterialTheme.typography.displaySmall.copy(fontSize = BigNumber),
+            textAlign = TextAlign.End,
+            maxLines = 1,
+            modifier = Modifier.width(CounterValueWidth),
+        )
+        Spacer(Modifier.width(PosohDimens.spaceS))
+        if (hold) {
+            HoldStepperButton("−", enabled = minus, fontSize = BigNumber) { onStep(-1) }
+            Spacer(Modifier.width(PosohDimens.spaceXs))
+            HoldStepperButton("+", enabled = plus, fontSize = BigNumber) { onStep(1) }
+        } else {
+            TapStepperButton("−", enabled = minus, fontSize = BigNumber) { onStep(-1) }
+            Spacer(Modifier.width(PosohDimens.spaceXs))
+            TapStepperButton("+", enabled = plus, fontSize = BigNumber) { onStep(1) }
         }
     }
 }
 
-/** Данные одной плитки защиты. */
-private data class TileData(val label: String, val value: String, val suffix: String? = null)
-
-/** Плитки защиты. Здоровья среди них нет: оно живёт в блоке жизни. */
-private fun defenceTiles(sheet: Sheet): List<TileData> = listOf(
-    TileData("Класс брони", sheet.armorClass().toString()),
-    TileData("Классовая СЛ", sheet.classDifficulty().toString()),
-    TileData("СЛ заклинаний", sheet.spellDifficulty().toString()),
-    TileData("Скорость", sheet.speed().toString(), suffix = "фт"),
-)
-
 /**
- * Две строки на каждое оружие: бросок атаки и бросок урона. Кость у них разная,
- * поэтому это именно две строки, а не одна с двумя числами.
+ * «Полностью здоров»: возвращает персонажа в порядок после отдыха. Стоит сразу
+ * за числами здоровья — то, что она чинит, начинается именно с них.
+ *
+ * Спрашивает подтверждение: нажать её посреди боя случайно — значит стереть всё
+ * состояние разом, а отменить это нечем.
  */
-private fun weaponRows(sheet: Sheet, record: CharacterWeaponRecord): List<RollRow> {
-    val weapon = record.toWeapon()
-    return listOf(
-        RollRow(
-            title = "Атака ${record.shortName}",
-            detail = weapon.name,
-            formula = rollFormula(sheet.attackMod(weapon)),
-            rank = weapon.rank,
-        ),
-        RollRow(
-            title = "Урон ${record.shortName}",
-            detail = weapon.traits,
-            formula = sheet.damageFormula(weapon),
-            rank = weapon.rank,
-        ),
-    )
-}
+@Composable
+private fun HealButton(onHeal: (Boolean) -> Unit, modifier: Modifier = Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    var ask by rememberSaveable { mutableStateOf(false) }
 
-/** Три испытания и восприятие: бросаются одинаково, поэтому и показываются вместе. */
-private fun saveRows(sheet: Sheet): List<RollRow> {
-    val saves = Save.entries.map { save ->
-        val rank = sheet.saves[save] ?: Rank.UNTRAINED
-        RollRow(
-            title = save.title,
-            detail = "${save.ability.title} · ${rank.title}",
-            formula = rollFormula(sheet.saveMod(save)),
-            rank = rank,
+    OutlinedButton(
+        onClick = { ask = true },
+        shape = RoundedCornerShape(22.dp),
+        // Цвет и рамка по правилам листа: текст чёрный, рамка как у плиток-кнопок.
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = scheme.onSurface),
+        border = BorderStroke(TileBorder, scheme.outline),
+        contentPadding = PaddingValues(horizontal = PosohDimens.spaceL, vertical = 0.dp),
+        modifier = modifier.heightIn(min = PosohDimens.minTouchTarget),
+    ) {
+        Text(
+            text = "Полностью здоров",
+            style = MaterialTheme.typography.labelLarge.copy(fontSize = 12.sp),
+            maxLines = 1,
         )
     }
-    val perception = RollRow(
-        title = "Восприятие",
-        detail = "${Ability.WIS.title} · ${sheet.perception.title}",
-        formula = rollFormula(sheet.perceptionMod()),
-        rank = sheet.perception,
-    )
-    return saves + perception
+
+    if (ask) {
+        HealDialog(
+            onDismiss = { ask = false },
+            onConfirm = { keepTempHp ->
+                ask = false
+                onHeal(keepTempHp)
+            },
+        )
+    }
 }
 
-/** Модификатор со знаком: +2, −1, 0. Минус типографский, как в формулах. */
-private fun signed(value: Int): String = when {
-    value > 0 -> "+$value"
-    value < 0 -> "−${-value}"
-    else -> "0"
+/**
+ * Подтверждение отдыха. Галочка про временные ПЗ снята по умолчанию: обычно они
+ * уходят вместе со всем остальным, а вот заклинание с долгим сроком — случай редкий,
+ * и о нём человек вспомнит сам.
+ */
+@Composable
+private fun HealDialog(onDismiss: () -> Unit, onConfirm: (Boolean) -> Unit) {
+    var keepTempHp by rememberSaveable { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Полностью здоров") },
+        text = {
+            Column {
+                Text(
+                    text = "Излечить персонажа полностью и сбросить его временные ПЗ?",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(Modifier.height(PosohDimens.spaceL))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.toggleable(
+                        value = keepTempHp,
+                        role = Role.Checkbox,
+                    ) { keepTempHp = it },
+                ) {
+                    Checkbox(checked = keepTempHp, onCheckedChange = null)
+                    Spacer(Modifier.width(PosohDimens.spaceS))
+                    Text(
+                        text = "Не сбрасывать временные ПЗ",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onConfirm(keepTempHp) }) { Text("Да") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Нет") } },
+    )
 }
 
 /*

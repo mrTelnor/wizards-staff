@@ -272,6 +272,9 @@ private fun AppFrame(
                             wounded = characterViewModel::addWounded,
                             dying = characterViewModel::setDying,
                             heal = characterViewModel::heal,
+                            shieldHp = characterViewModel::addShieldHp,
+                            shieldRaised = characterViewModel::setShieldRaised,
+                            xp = characterViewModel::setXp,
                         ),
                     )
 

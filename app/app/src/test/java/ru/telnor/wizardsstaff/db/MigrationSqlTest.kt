@@ -25,7 +25,7 @@ class MigrationSqlTest {
     @Test
     fun `слепки схем лежат в проекте`() {
         // Если файлов нет, остальные проверки прошли бы молча и впустую.
-        for (version in 2..3) {
+        for (version in 2..8) {
             assertTrue(
                 "не найден ${schema(version).absolutePath}: выгрузка схемы отключена " +
                     "или каталог переехал",
@@ -48,40 +48,96 @@ class MigrationSqlTest {
 
     @Test
     fun `миграция 2 в 3 добавляет ровно те столбцы, что появились в слепке`() {
-        val before = charactersColumns(schema(2).readText())
-        val after = charactersColumns(schema(3).readText())
-        val added = after.filterKeys { it !in before }
-
-        assertTrue("между версиями 2 и 3 у персонажа не прибавилось ни одного столбца", added.isNotEmpty())
         assertEquals(
             "ALTER-ы разошлись со слепком: перенеси описание столбца из 3.json как есть",
-            added.values.map { "ALTER TABLE `characters` ADD COLUMN $it" }.sorted(),
+            addedColumns(2, 3).values.map { "ALTER TABLE `characters` ADD COLUMN $it" }.sorted(),
             BATTLE_STATE_SQL.map { it.normalized() }.sorted(),
         )
     }
 
     @Test
+    fun `миграция 3 в 4 добавляет ровно те столбцы, что появились в слепке`() {
+        assertEquals(
+            "ALTER-ы разошлись со слепком: перенеси описание столбца из 4.json как есть",
+            addedColumns(3, 4).values.map { "ALTER TABLE `characters` ADD COLUMN $it" }.sorted(),
+            SHIELD_HP_SQL.map { it.normalized() }.sorted(),
+        )
+    }
+
+    @Test
+    fun `миграция 4 в 5 добавляет ровно те столбцы, что появились в слепке`() {
+        assertEquals(
+            "ALTER-ы разошлись со слепком: перенеси описание столбца из 5.json как есть",
+            addedColumns(4, 5).values.map { "ALTER TABLE `characters` ADD COLUMN $it" }.sorted(),
+            SHIELD_RAISED_SQL.map { it.normalized() }.sorted(),
+        )
+    }
+
+    @Test
+    fun `миграция 5 в 6 добавляет ровно те столбцы, что появились в слепке`() {
+        assertEquals(
+            "ALTER-ы разошлись со слепком: перенеси описание столбца из 6.json как есть",
+            addedColumns(5, 6).values.map { "ALTER TABLE `characters` ADD COLUMN $it" }.sorted(),
+            INITIATIVE_SQL.map { it.normalized() }.sorted(),
+        )
+    }
+
+    @Test
+    fun `миграция 6 в 7 добавляет ровно те столбцы, что появились в слепке`() {
+        assertEquals(
+            "ALTER-ы разошлись со слепком: перенеси описание столбца из 7.json как есть",
+            addedColumns(6, 7, "character_weapons").values
+                .map { "ALTER TABLE `character_weapons` ADD COLUMN $it" }
+                .sorted(),
+            DAMAGE_TYPE_SQL.map { it.normalized() }.sorted(),
+        )
+    }
+
+    @Test
+    fun `миграция 7 в 8 добавляет ровно те столбцы, что появились в слепке`() {
+        assertEquals(
+            "ALTER-ы разошлись со слепком: перенеси описание столбца из 8.json как есть",
+            addedColumns(7, 8, "character_weapons").values
+                .map { "ALTER TABLE `character_weapons` ADD COLUMN $it" }
+                .sorted(),
+            SHORT_TRAITS_SQL.map { it.normalized() }.sorted(),
+        )
+    }
+
+    @Test
     fun `новые столбцы не остаются без умолчания`() {
-        val before = charactersColumns(schema(2).readText())
-        val after = charactersColumns(schema(3).readText())
-        for ((name, definition) in after.filterKeys { it !in before }) {
-            // SQLite не добавит к заполненной таблице столбец NOT NULL без DEFAULT:
-            // существующим строкам нечем заполнить новое поле.
-            assertTrue(
-                "столбцу $name нужен DEFAULT: он NOT NULL, а листы в базе уже есть",
-                !definition.contains("NOT NULL") || definition.contains("DEFAULT"),
-            )
+        // Правило общее для всех переездов, поэтому проверяется на каждом: забыть
+        // DEFAULT легче всего в следующей миграции, а не в уже написанной.
+        for (version in 3..8) {
+            val table = if (version >= 7) "character_weapons" else "characters"
+            for ((name, definition) in addedColumns(version - 1, version, table)) {
+                // SQLite не добавит к заполненной таблице столбец NOT NULL без DEFAULT:
+                // существующим строкам нечем заполнить новое поле.
+                assertTrue(
+                    "столбцу $name нужен DEFAULT: он NOT NULL, а листы в базе уже есть",
+                    !definition.contains("NOT NULL") || definition.contains("DEFAULT"),
+                )
+            }
         }
     }
 
+    /** Столбцы таблицы, появившиеся между двумя версиями слепка. */
+    private fun addedColumns(from: Int, to: Int, table: String = "characters"): Map<String, String> {
+        val before = tableColumns(schema(from).readText(), table)
+        val after = tableColumns(schema(to).readText(), table)
+        val added = after.filterKeys { it !in before }
+        assertTrue("между версиями $from и $to в `$table` не прибавилось ни одного столбца", added.isNotEmpty())
+        return added
+    }
+
     /**
-     * Столбцы таблицы персонажа из слепка: имя → описание вида «`tempHp` INTEGER NOT NULL
-     * DEFAULT 0». Разбирается прямо из `createSql`: у этой таблицы нет внешних ключей,
-     * поэтому скобки внутри описания не встречаются и хватает разделения по запятой.
+     * Столбцы таблицы из слепка: имя → описание вида «`tempHp` INTEGER NOT NULL
+     * DEFAULT 0». Разбирается прямо из `createSql`, поэтому у таблицы с внешними
+     * ключами хвост после последнего столбца просто отбрасывается.
      */
-    private fun charactersColumns(json: String): Map<String, String> {
-        val sql = createStatements(json).first { it.startsWith("CREATE TABLE IF NOT EXISTS `characters`") }
-        val inside = sql.substringAfter("(").substringBeforeLast(")")
+    private fun tableColumns(json: String, table: String): Map<String, String> {
+        val sql = createStatements(json).first { it.startsWith("CREATE TABLE IF NOT EXISTS `$table`") }
+        val inside = sql.substringAfter("(").substringBeforeLast(")").substringBefore(", FOREIGN KEY")
         return inside.split(", `")
             .map { if (it.startsWith("`")) it else "`$it" }
             .associateBy { it.substringAfter("`").substringBefore("`") }

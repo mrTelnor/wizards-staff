@@ -54,9 +54,15 @@ class CharacterRepository(context: Context) {
 
     suspend fun addWounded(id: Long, delta: Int) = dao.addWounded(id, delta, WOUNDED_MAX)
 
+    suspend fun addShieldHp(id: Long, delta: Int) = dao.addShieldHp(id, delta)
+
+    suspend fun setShieldRaised(id: Long, raised: Boolean) = dao.setShieldRaised(id, raised)
+
+    suspend fun setXp(id: Long, xp: Int) = dao.setXp(id, xp)
+
     suspend fun setDying(id: Long, dying: Boolean) = dao.setDying(id, dying)
 
-    suspend fun heal(id: Long) = dao.heal(id)
+    suspend fun heal(id: Long, keepTempHp: Boolean) = dao.heal(id, keepTempHp)
 
     /**
      * Засев при первом запуске: если персонажей нет ни одного, в базу кладётся Сильврин.

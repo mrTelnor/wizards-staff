@@ -13,9 +13,12 @@ import androidx.compose.ui.unit.sp
 /*
  * Типографика «Посоха мага».
  *
- * Literata — цифры результата и имена персонажей. Серифная антиква: крупная цифра,
- *   набранная ей, читается через стол и даёт «книжный» оттенок без готики и пергамента.
- * Onest — весь интерфейс. Гротеск с честной кириллицей и узкими цифрами.
+ * Onest — всё: надписи, числа и знаки. Гротеск с честной кириллицей и узкими цифрами.
+ *   Решение автора от 2026-09-21: лист набран одним шрифтом, иначе число и подпись
+ *   рядом читаются как из разных документов.
+ * Literata — осталась только на экране «Броски»: результат броска во весь шар
+ *   и суммы в ленте. Там крупная серифная цифра читается через стол и даёт
+ *   «книжный» оттенок без готики и пергамента.
  *
  * Оба шрифта лежат в res/font. Нужны файлы (Google Fonts, SIL OFL):
  *   res/font/literata_semibold.ttf   (600)
@@ -77,7 +80,7 @@ val PosohTypography = Typography(
 
     // Значения в плитках листа персонажа: КБ, ПЗ, Класс. СЛ, Восприятие, Скорость.
     displaySmall = TextStyle(
-        fontFamily = Literata,
+        fontFamily = Onest,
         fontWeight = FontWeight.Bold,
         fontSize = 30.sp,
         lineHeight = 35.sp,
@@ -112,7 +115,7 @@ val PosohTypography = Typography(
 
     // Имя персонажа.
     titleLarge = TextStyle(
-        fontFamily = Literata,
+        fontFamily = Onest,
         fontWeight = FontWeight.Bold,
         fontSize = 27.sp,
         lineHeight = 33.sp,
@@ -176,13 +179,16 @@ val PosohTypography = Typography(
         lineHeight = 16.sp,
     ),
 
-    // Надпись над блоком: «ПОСЛЕДНИЙ БРОСОК», «АКТИВНОЕ ДЕЙСТВИЕ», «КЛАСС БРОНИ».
+    // Надпись над блоком: «ПОСЛЕДНИЙ БРОСОК», «АКТИВНОЕ ДЕЙСТВИЕ», «ЗДОРОВЬЕ».
     // Выводить в верхнем регистре на стороне вызова (text.uppercase()).
+    //
+    // Двенадцать, а не одиннадцать: по решению автора все подписи листа — имена
+    // характеристик, надписи над блоками, строка под именем — набраны одним кеглем.
     labelSmall = TextStyle(
         fontFamily = Onest,
         fontWeight = FontWeight.Bold,
-        fontSize = 11.sp,
-        lineHeight = 15.sp,
+        fontSize = 12.sp,
+        lineHeight = 16.sp,
         letterSpacing = 0.07.em,
     ),
 )

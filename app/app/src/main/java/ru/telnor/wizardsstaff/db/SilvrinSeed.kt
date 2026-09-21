@@ -51,6 +51,8 @@ fun silvrinSeed(): CharacterSeed {
         armorName = SILVRIN.armor?.name,
         armorRanks = SILVRIN.armorRanks,
         perception = SILVRIN.perception,
+        // «Невероятная инициатива», общая черта 3 уровня: +2 к броскам инициативы.
+        initiativeBonus = 2,
         perceptionItem = SILVRIN.perceptionItem,
         saves = SILVRIN.saves,
         saveItems = SILVRIN.saveItems,
@@ -71,6 +73,10 @@ fun silvrinSeed(): CharacterSeed {
         languages = "Всеобщий, аммуррун",
         shieldAc = 1,
         shieldHardness = 10,
+        // ПЗ щита в бланке не заполнены; 20 взяты по решению автора от 2026-09-21,
+        // до отдельного листа снаряжения. Предел прочности из них выводится сам.
+        shieldHp = 20,
+        shieldMaxHp = 20,
 
         platinum = 0,
         gold = 3,
@@ -88,8 +94,16 @@ fun silvrinSeed(): CharacterSeed {
     // Короткие имена — из макета: в строках листа стоит «Атака когтями», а не полное
     // имя предмета, которое заняло бы всю строку и оставило формулу без места.
     val weapons = listOf(
-        SILVRIN_CLAWS.toRecord(shortName = "когтями", position = 0),
-        SILVRIN_MAUL.toRecord(shortName = "молотом", position = 1),
+        SILVRIN_CLAWS.toRecord(
+            shortName = "когтями",
+            shortTraits = "безоруж., быстр., фехт.",
+            position = 0,
+        ),
+        SILVRIN_MAUL.toRecord(
+            shortName = "двуручным молотом",
+            shortTraits = "толк.",
+            position = 1,
+        ),
     )
 
     // Порядок внутри колонки — как в бланке: сверху то, что получено раньше.
@@ -132,7 +146,11 @@ fun silvrinSeed(): CharacterSeed {
 }
 
 /** Оружие из правил в строку таблицы. */
-private fun Weapon.toRecord(shortName: String, position: Int) = CharacterWeaponRecord(
+private fun Weapon.toRecord(
+    shortName: String,
+    shortTraits: String,
+    position: Int,
+) = CharacterWeaponRecord(
     characterId = 0,
     name = name,
     shortName = shortName,
@@ -141,6 +159,8 @@ private fun Weapon.toRecord(shortName: String, position: Int) = CharacterWeaponR
     potency = potency,
     finesse = finesse,
     traits = traits,
+    shortTraits = shortTraits,
+    damageType = damageType,
     position = position,
 )
 

@@ -72,7 +72,7 @@ class SilvrinSeedTest {
         assertEquals(SILVRIN_MAUL, seed.weapons[1].toWeapon())
         assertEquals(listOf(0, 1), seed.weapons.map { it.position })
         // Короткие имена подставляются в «Атака …» и «Урон …» на вкладке «Обзор».
-        assertEquals(listOf("когтями", "молотом"), seed.weapons.map { it.shortName })
+        assertEquals(listOf("когтями", "двуручным молотом"), seed.weapons.map { it.shortName })
     }
 
     @Test

@@ -150,6 +150,40 @@ class Pf2Test {
     }
 
     @Test
+    fun `инициатива бросается восприятием, черта прибавляет сверху`() {
+        // По бланку восприятие 16. «Невероятная инициатива» даёт +2, итого 18.
+        assertEquals(16, SILVRIN.initiativeMod(0))
+        assertEquals(18, SILVRIN.initiativeMod(2))
+    }
+
+    // ---------- щит ----------
+
+    @Test
+    fun `порог поломки щита — половина его максимальных ПЗ`() {
+        // Из книги: деревянный щит 3 / 12 / 6, стальной 5 / 20 / 10.
+        assertEquals(6, shieldBrokenThreshold(12))
+        assertEquals(10, shieldBrokenThreshold(20))
+        // Нечётный максимум делится вниз, как и всё остальное в этой системе.
+        assertEquals(7, shieldBrokenThreshold(15))
+    }
+
+    @Test
+    fun `щит ломается, когда ПЗ падают до порога`() {
+        assertFalse(shieldBroken(12, 12))
+        assertFalse(shieldBroken(7, 12))
+        assertTrue(shieldBroken(6, 12))  // ровно порог — уже сломан
+        assertTrue(shieldBroken(0, 12))
+    }
+
+    @Test
+    fun `незаполненный щит не считается сломанным`() {
+        // ПЗ щита в бланке Сильврина пустые. Ноль здесь значит «не заполнено»,
+        // а не «разбит в щепки», и пугать красным на экране нечем.
+        assertEquals(0, shieldBrokenThreshold(0))
+        assertFalse(shieldBroken(0, 0))
+    }
+
+    @Test
     fun `формула броска пишется знаком`() {
         assertEquals("1d20 + 13", rollFormula(13))
         assertEquals("1d20", rollFormula(0))
