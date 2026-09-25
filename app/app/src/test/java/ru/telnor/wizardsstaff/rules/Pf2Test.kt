@@ -99,6 +99,29 @@ class Pf2Test {
         assertEquals("2d12 + 2", SILVRIN.damageFormula(SILVRIN_MAUL))
     }
 
+    @Test
+    fun `разбор навыка складывается ровно в сам навык`() {
+        // Вкладка «Навыки» показывает разбор второй строкой. Он считается той же
+        // функцией, что и число, и это сверка того, что так и осталось.
+        for (skill in Skill.entries) {
+            assertEquals(skill.title, SILVRIN.skillMod(skill), SILVRIN.skillModParts(skill).total)
+        }
+    }
+
+    @Test
+    fun `у Сильврина штрафа брони нет ни в одном навыке`() {
+        // Силы ровно 14 при требовании деревянного нагрудника 14 — штраф не включается.
+        assertTrue(Skill.entries.all { SILVRIN.skillModParts(it).armor == 0 })
+    }
+
+    @Test
+    fun `штраф брони попадает в разбор только силовых и ловких навыков`() {
+        val weaker = SILVRIN.copy(scores = SILVRIN.scores + (Ability.STR to 12))
+        assertEquals(-2, weaker.skillModParts(Skill.ATHLETICS).armor)
+        assertEquals(-2, weaker.skillModParts(Skill.ACROBATICS).armor)
+        assertEquals(0, weaker.skillModParts(Skill.MEDICINE).armor)
+    }
+
     // ---------- ради чего всё затевалось: поменял характеристику, изменилось везде ----------
 
     @Test

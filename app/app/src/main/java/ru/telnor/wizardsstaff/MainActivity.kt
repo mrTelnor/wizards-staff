@@ -64,6 +64,7 @@ import ru.telnor.wizardsstaff.ui.PinPromptDialog
 import ru.telnor.wizardsstaff.ui.RollsScreen
 import ru.telnor.wizardsstaff.ui.CharacterSaveButtons
 import ru.telnor.wizardsstaff.ui.SheetActions
+import ru.telnor.wizardsstaff.ui.SkillActions
 import ru.telnor.wizardsstaff.ui.StaffIcons
 import ru.telnor.wizardsstaff.ui.StaffScreen
 import ru.telnor.wizardsstaff.ui.theme.PosohDimens
@@ -282,6 +283,21 @@ private fun AppFrame(
                             shieldRaised = characterViewModel::setShieldRaised,
                             xp = characterViewModel::setXp,
                         ),
+                        skillActions = SkillActions(
+                            skillRank = characterViewModel::setSkillRank,
+                            skillItem = characterViewModel::setSkillItem,
+                            armorRank = characterViewModel::setArmorRank,
+                            saveRank = characterViewModel::setSaveRank,
+                            saveItem = characterViewModel::setSaveItem,
+                            perceptionRank = characterViewModel::setPerceptionRank,
+                            perceptionItem = characterViewModel::setPerceptionItem,
+                            classDc = characterViewModel::setClassDc,
+                            spellAttack = characterViewModel::setSpellAttack,
+                            spellDc = characterViewModel::setSpellDc,
+                            weaponRank = characterViewModel::setWeaponRank,
+                            lore = characterViewModel::setLore,
+                        ),
+                        featCatalog = characterViewModel.featCatalog,
                     )
 
                     else -> Placeholder(

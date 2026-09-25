@@ -241,3 +241,24 @@ val MIGRATION_8_9 = object : Migration(8, 9) {
         CHARACTER_SAVES_SQL.forEach(db::execSQL)
     }
 }
+
+/**
+ * Версия 9 → 10: только правка данных, новых столбцов нет.
+ *
+ * В блок владения оружием добавилось «Простое»: в бланке такого поля не оказалось,
+ * и строка появилась по указанию автора. Засев её проставит на чистой установке,
+ * а уже заполненную базу догоняет этот запрос.
+ *
+ * Условие — точное совпадение со старым значением: чужой или уже поправленный список
+ * запрос не тронет. Формат строки — «что:СТЕПЕНЬ» через точку с запятой,
+ * см. `CharacterConverters`.
+ */
+val SIMPLE_WEAPONS_FILL_SQL =
+    "UPDATE characters SET weaponTraining = 'Простое:TRAINED;' || weaponTraining " +
+        "WHERE weaponTraining = 'Особое:TRAINED;Нож-звезда:EXPERT;Безоружное:TRAINED'"
+
+val MIGRATION_9_10 = object : Migration(9, 10) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(SIMPLE_WEAPONS_FILL_SQL)
+    }
+}

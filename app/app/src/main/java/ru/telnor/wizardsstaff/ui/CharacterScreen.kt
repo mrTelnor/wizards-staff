@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import ru.telnor.wizardsstaff.db.CatalogFeat
 import ru.telnor.wizardsstaff.db.CharacterSheet
 import ru.telnor.wizardsstaff.ui.theme.PosohDimens
 
@@ -49,7 +51,7 @@ enum class CharacterTab(val title: String) {
     Overview("Обзор"),
     Skills("Навыки"),
     Spells("Магия"),
-    Feats("Черты и снаряжение"),
+    Feats("Черты и знания"),
 }
 
 @Composable
@@ -57,6 +59,8 @@ fun CharacterScreen(
     character: CharacterSheet?,
     modifier: Modifier = Modifier,
     actions: SheetActions = SheetActions(),
+    skillActions: SkillActions = SkillActions(),
+    featCatalog: List<CatalogFeat> = emptyList(),
 ) {
     // rememberSaveable: поворот планшета пересоздаёт активность, и обычный remember
     // вернул бы человека на «Обзор» с той вкладки, которую он читал.
@@ -75,6 +79,12 @@ fun CharacterScreen(
                     actions = actions,
                     onOpenSpells = { tab = CharacterTab.Spells },
                 )
+
+            tab == CharacterTab.Skills ->
+                SkillsTab(character, Modifier.fillMaxSize(), skillActions)
+
+            tab == CharacterTab.Feats ->
+                FeatsTab(character, featCatalog, Modifier.fillMaxSize())
             else -> TabComing(tab)
         }
     }
@@ -101,6 +111,10 @@ private fun TabBar(selected: CharacterTab, onSelect: (CharacterTab) -> Unit) {
                 verticalArrangement = Arrangement.Bottom,
                 modifier = Modifier
                     .height(48.dp)
+                    // Ширина по содержимому обязательна: ниже лежит подчёркивание
+                    // с `fillMaxWidth`, и без потолка первая же вкладка забирала всю
+                    // строку, а остальные три уезжали за край экрана.
+                    .width(IntrinsicSize.Max)
                     .clickable { onSelect(item) },
             ) {
                 Spacer(Modifier.weight(1f))
@@ -130,12 +144,8 @@ private fun TabBar(selected: CharacterTab, onSelect: (CharacterTab) -> Unit) {
 @Composable
 private fun TabComing(tab: CharacterTab) {
     val text = when (tab) {
-        CharacterTab.Skills -> "Обученные и нетренированные навыки со степенями владения " +
-            "и бонусами, по которым их бросают."
-
         CharacterTab.Spells -> "Атака заклинанием, СЛ, традиция, заговоры и ячейки по кругам."
-        CharacterTab.Feats -> "Черты народа, класса и навыков, снаряжение, кошель и языки."
-        CharacterTab.Overview -> ""
+        CharacterTab.Overview, CharacterTab.Skills, CharacterTab.Feats -> ""
     }
     Message(title = "Вкладка «${tab.title}» ещё не сделана", text = text)
 }

@@ -155,6 +155,18 @@ fun PartDivider(horizontal: Dp = PosohDimens.spaceS) {
     )
 }
 
+/** Надпись над разделом вкладки: «НАВЫКИ», «ЯЗЫКИ», «КЛАССОВЫЕ ЧЕРТЫ». */
+@Composable
+fun SectionTitle(text: String) {
+    Text(
+        text = text.uppercase(),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurface,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth().padding(top = PosohDimens.spaceS),
+    )
+}
+
 /**
  * Подписанный кусочек блока: надпись сверху, содержимое под ней. Из таких собраны
  * и блок жизни, и блок брони.

@@ -4,7 +4,12 @@ import android.content.Context
 import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import ru.telnor.wizardsstaff.rules.ArmorCategory
 import ru.telnor.wizardsstaff.rules.HERO_POINTS_MAX
+import ru.telnor.wizardsstaff.rules.Rank
+import ru.telnor.wizardsstaff.rules.Save
+import ru.telnor.wizardsstaff.rules.Skill
+import ru.telnor.wizardsstaff.rules.WeaponTraining
 import ru.telnor.wizardsstaff.rules.Sheet
 import ru.telnor.wizardsstaff.rules.WOUNDED_MAX
 
@@ -102,6 +107,32 @@ class CharacterRepository(context: Context) {
     suspend fun setShieldRaised(id: Long, raised: Boolean) = dao.setShieldRaised(id, raised)
 
     suspend fun setXp(id: Long, xp: Int) = dao.setXp(id, xp)
+
+    // Правка владений с вкладки «Навыки». Карту меняет вызывающий, сюда приходит готовая.
+
+    suspend fun setSkills(id: Long, value: Map<Skill, Rank>) = dao.setSkills(id, value)
+
+    suspend fun setSkillItems(id: Long, value: Map<Skill, Int>) = dao.setSkillItems(id, value)
+
+    suspend fun setArmorRanks(id: Long, value: Map<ArmorCategory, Rank>) =
+        dao.setArmorRanks(id, value)
+
+    suspend fun setSaves(id: Long, value: Map<Save, Rank>) = dao.setSaves(id, value)
+
+    suspend fun setSaveItems(id: Long, value: Map<Save, Int>) = dao.setSaveItems(id, value)
+
+    suspend fun setPerception(id: Long, rank: Rank, item: Int) = dao.setPerception(id, rank, item)
+
+    suspend fun setClassDc(id: Long, value: Rank) = dao.setClassDc(id, value)
+
+    suspend fun setSpellAttack(id: Long, value: Rank) = dao.setSpellAttack(id, value)
+
+    suspend fun setSpellDc(id: Long, value: Rank) = dao.setSpellDc(id, value)
+
+    suspend fun setWeaponTraining(id: Long, value: List<WeaponTraining>) =
+        dao.setWeaponTraining(id, value)
+
+    suspend fun setLore(id: Long, first: String?, second: String?) = dao.setLore(id, first, second)
 
     suspend fun setDying(id: Long, dying: Boolean) = dao.setDying(id, dying)
 

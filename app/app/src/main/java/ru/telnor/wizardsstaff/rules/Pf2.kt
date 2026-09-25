@@ -273,14 +273,36 @@ fun Sheet.initiativeMod(bonus: Int): Int = perceptionMod() + bonus
 fun Sheet.perceptionMod(): Int =
     mod(Ability.WIS) + perception.bonus(level) + perceptionItem
 
-/** Навык: характеристика, владение, предмет и штраф брони, если он есть. */
-fun Sheet.skillMod(skill: Skill): Int {
-    val penalty = if (skill.takesArmorPenalty) armorCheckPenalty() else 0
-    return mod(skill.ability) +
-        (skills[skill] ?: Rank.UNTRAINED).bonus(level) +
-        (skillItems[skill] ?: 0) +
-        penalty
+/**
+ * Из чего сложился модификатор навыка. Вкладка «Навыки» показывает этот разбор
+ * второй строкой: иначе «+12 вместо +14» выглядит ошибкой, а это штраф брони.
+ *
+ * Разбор и сам модификатор считаются одной функцией — как у КБ. Посчитай их
+ * по отдельности, и они однажды разойдутся.
+ */
+data class SkillModParts(
+    val ability: Int,
+    val proficiency: Int,
+    /** Бонус предмета. */
+    val item: Int,
+    /** Штраф брони: отрицательное число или ноль. */
+    val armor: Int,
+) {
+    val total: Int get() = ability + proficiency + item + armor
 }
+
+/** Слагаемые навыка: характеристика, владение, предмет и штраф брони, если он есть. */
+fun Sheet.skillModParts(skill: Skill): SkillModParts = SkillModParts(
+    ability = mod(skill.ability),
+    proficiency = (skills[skill] ?: Rank.UNTRAINED).bonus(level),
+    item = skillItems[skill] ?: 0,
+    // Штраф брони бьёт только по проверкам силы и ловкости, и только когда силы
+    // персонажа не хватает на требование доспеха.
+    armor = if (skill.takesArmorPenalty) armorCheckPenalty() else 0,
+)
+
+/** Навык — сумма своих слагаемых. */
+fun Sheet.skillMod(skill: Skill): Int = skillModParts(skill).total
 
 /** Классовая СЛ: десятка, ключевая характеристика, владение. */
 fun Sheet.classDifficulty(): Int = 10 + mod(keyAbility) + classDc.bonus(level)

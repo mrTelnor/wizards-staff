@@ -7,6 +7,11 @@ import androidx.room.Query
 import androidx.room.Relation
 import androidx.room.Transaction
 import kotlinx.coroutines.flow.Flow
+import ru.telnor.wizardsstaff.rules.ArmorCategory
+import ru.telnor.wizardsstaff.rules.Rank
+import ru.telnor.wizardsstaff.rules.Save
+import ru.telnor.wizardsstaff.rules.Skill
+import ru.telnor.wizardsstaff.rules.WeaponTraining
 
 /**
  * Персонаж со всеми своими частями, как их отдаёт Room.
@@ -109,6 +114,46 @@ interface CharacterDao {
     /** «Щит поднят» — галочка, как и «при смерти». */
     @Query("UPDATE characters SET shieldRaised = :raised WHERE id = :id")
     suspend fun setShieldRaised(id: Long, raised: Boolean)
+
+    /*
+     * Правка владений с вкладки «Навыки». Каждое поле своим запросом, а не одной
+     * перезаписью строки: иначе правка владения затёрла бы ПЗ, изменённые секундой
+     * раньше на «Обзоре». Карты и списки Room упаковывает сам, через `CharacterConverters`.
+     */
+
+    @Query("UPDATE characters SET skills = :value WHERE id = :id")
+    suspend fun setSkills(id: Long, value: Map<Skill, Rank>)
+
+    @Query("UPDATE characters SET skillItems = :value WHERE id = :id")
+    suspend fun setSkillItems(id: Long, value: Map<Skill, Int>)
+
+    @Query("UPDATE characters SET armorRanks = :value WHERE id = :id")
+    suspend fun setArmorRanks(id: Long, value: Map<ArmorCategory, Rank>)
+
+    @Query("UPDATE characters SET saves = :value WHERE id = :id")
+    suspend fun setSaves(id: Long, value: Map<Save, Rank>)
+
+    @Query("UPDATE characters SET saveItems = :value WHERE id = :id")
+    suspend fun setSaveItems(id: Long, value: Map<Save, Int>)
+
+    @Query("UPDATE characters SET perception = :rank, perceptionItem = :item WHERE id = :id")
+    suspend fun setPerception(id: Long, rank: Rank, item: Int)
+
+    @Query("UPDATE characters SET classDc = :value WHERE id = :id")
+    suspend fun setClassDc(id: Long, value: Rank)
+
+    @Query("UPDATE characters SET spellAttack = :value WHERE id = :id")
+    suspend fun setSpellAttack(id: Long, value: Rank)
+
+    @Query("UPDATE characters SET spellDc = :value WHERE id = :id")
+    suspend fun setSpellDc(id: Long, value: Rank)
+
+    @Query("UPDATE characters SET weaponTraining = :value WHERE id = :id")
+    suspend fun setWeaponTraining(id: Long, value: List<WeaponTraining>)
+
+    /** Уточнения к двум «Знаниям»: «Знание (Ламашту)». */
+    @Query("UPDATE characters SET lore1 = :first, lore2 = :second WHERE id = :id")
+    suspend fun setLore(id: Long, first: String?, second: String?)
 
     /**
      * Опыт. Здесь не прибавка, а готовое число: его набирают в поле целиком,

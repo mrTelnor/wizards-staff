@@ -22,7 +22,7 @@ import androidx.room.TypeConverters
         CharacterItemRecord::class,
         CharacterSpellRecord::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = true,
 )
 @TypeConverters(RollConverters::class, CharacterConverters::class)
@@ -59,6 +59,7 @@ abstract class StaffDatabase : RoomDatabase() {
                         MIGRATION_6_7,
                         MIGRATION_7_8,
                         MIGRATION_8_9,
+                        MIGRATION_9_10,
                     )
                     .build().also { instance = it }
             }
