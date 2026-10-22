@@ -53,6 +53,7 @@ void displayBegin() {
   tft.init(TFT_SIZE, TFT_SIZE, TFT_SPI_MODE);
   tft.setSPISpeed(TFT_SPI_HZ);
   tft.setRotation(TFT_ROTATION);
+  tft.setTextWrap(false);   // см. drawNumberIn: перенос строк прятал однозначные суммы
   tft.fillScreen(ST77XX_BLACK);
   analogWrite(PIN_TFT_BLK, 255);   // подсветка на полную; яркость появится в настройках
 }
@@ -80,14 +81,26 @@ void drawBattery() {
   tft.drawRect(x, y, 30, 14, ST77XX_WHITE);
   tft.fillRect(x + 30, y + 4, 3, 6, ST77XX_WHITE);    // «пипка» батарейки
   tft.fillRect(x + 2, y + 2, 26, 10, ST77XX_BLACK);   // стираем прежнюю заливку
-  int fill = constrain(statusBattPct, 0, 100) * 26 / 100;
-  tft.fillRect(x + 2, y + 2, fill, 10, statusBattPct < 20 ? ST77XX_RED : ST77XX_GREEN);
+  int pct = constrain(statusBattPct, 0, 100);
+  tft.fillRect(x + 2, y + 2, pct * 26 / 100, 10, pct < 20 ? ST77XX_RED : ST77XX_GREEN);
+
+  // Слева от значка заряд числом, как на телефоне: «77%». Прижат вправо к значку,
+  // поэтому сначала стираем место под самое длинное «100%», потом пишем.
+  char text[6];
+  snprintf(text, sizeof(text), "%d%%", pct);
+  const int right = x - 4;                               // правый край видимых букв
+  const int widest = (6 * 4 - 1) * 2;                    // «100%» шрифтом 2
+  tft.fillRect(right - widest, STATUS_Y, widest + 1, 17, ST77XX_BLACK);
+  tft.setTextSize(2);
+  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  tft.setCursor(right - ((6 * (int)strlen(text) - 1) * 2 - 1), STATUS_Y + 1);
+  tft.print(text);
 }
 
-// Значок Bluetooth слева от батареи, как в строке состояния телефона: руна из линий.
+// Значок Bluetooth слева от заряда в процентах, как в строке состояния телефона: руна из линий.
 // Планшет подключён — голубой, нет — тёмно-серый, едва заметный.
 void drawBleIcon() {
-  const int cx = 188, top = STATUS_Y, bottom = STATUS_Y + 16;
+  const int cx = 143, top = STATUS_Y, bottom = STATUS_Y + 16;
   const int up = top + 4, down = bottom - 4;   // где боковые усики сходятся к стволу
   tft.fillRect(cx - 6, top, 13, 17, ST77XX_BLACK);
   uint16_t c = statusConnected ? COLOR_BLE : COLOR_DARK_GREY;
@@ -226,6 +239,11 @@ RollWindow rollWindow(long largest) {
 // выезжает снизу и уходит за верхний край окна.
 void drawNumberIn(GFXcanvas16& canvas, const RollWindow& win, long value, int offset,
                   uint8_t size, uint16_t color) {
+  // Перенос строк выключен обязательно. Библиотека переносит букву на следующую
+  // строку, если та «не влезает» вместе с пустой колонкой справа. Окно однозначной
+  // суммы узкое (64 точки), цифра со столбцом — 60 от отступа 7, и цифра уезжала
+  // за нижний край окна: на экране было пусто. Пойман 2026-10-24 на 1d6 и 2d4.
+  canvas.setTextWrap(false);
   canvas.setTextSize(size);
   canvas.setTextColor(color);
   canvas.setCursor((win.w - totalInkWidth(digitsOf(value), size)) / 2,
