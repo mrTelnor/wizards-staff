@@ -5,7 +5,7 @@
 // В остальном коде номеров нет, только имена отсюда. Распиновка: hardware/wiring.md.
 
 // ===== Версия прошивки, уходит телефону в ответе info =====
-const char* FW_VERSION = "0.5.1";
+const char* FW_VERSION = "0.6.1";
 
 // ===== Ножки платы ESP32-C3 SuperMini =====
 const int PIN_I2C_SDA  = 0;    // шина I2C: часы и расширители кнопок
@@ -53,7 +53,7 @@ const unsigned long STRIKE_GUARD_MS     = 300;     // после нажатия 
 const unsigned long STRIKE_COOLDOWN_MS  = 5000;    // после броска датчик не слушаем: стол ещё дрожит, посох звенит
 const unsigned long STRIKE_WINDOW_MS    = 100;     // окно, в котором считаем переключения датчика
 const int           STRIKE_MIN_EDGES    = 10;       // от скольких переключений в окне пачка считается ударом
-const unsigned long ROLL_ANIM_MS        = 1500;    // длительность анимации броска
+const unsigned long ROLL_ANIM_MS        = 1100;    // длительность барабана на экране: как в приложении (решение автора 2026-10-22, было 1500)
 const unsigned long SETTINGS_TIMEOUT_MS = 20000;   // выход из настроек и истории без нажатий
 const unsigned long BATTERY_PERIOD_MS   = 10000;   // как часто мерить заряд
 

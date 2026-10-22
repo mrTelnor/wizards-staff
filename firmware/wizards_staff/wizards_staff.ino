@@ -1,8 +1,9 @@
-// Проверка BLE, часов и датчика удара (задачи B1–B3 плана этапа 2). Посох виден как WizardsStaff,
-// раз в 10 с отдаёт заряд, отвечает на info, time, arm, disarm и roll. Приложение взводит посох
-// на нужную кость, удар об пол бросает её и отдаёт бросок в Serial и на планшет.
+// Главный цикл посоха. Посох виден по BLE как WizardsStaff, раз в 10 с отдаёт заряд,
+// отвечает на info, time, arm, disarm и roll. Приложение взводит посох на нужную кость,
+// удар об пол бросает её и отдаёт бросок в Serial и на планшет.
+// Экран (задача 3 основного плана): в покое часы, взведённый посох показывает «3d6»,
+// после удара на экране результат до следующего взвода.
 // Пока нет кнопок, взвод приходит только из приложения; невзведённый посох удары не считает.
-// Этот файл временный, в задаче 3 основного плана его заменит настоящая прошивка.
 #include <LittleFS.h>
 #include "config.h"
 #include "log.h"
@@ -14,6 +15,7 @@
 #include "strike.h"
 #include "rtc.h"
 #include "ble.h"
+#include "display.h"
 
 const int     PIN_LED       = 8;      // светодиод на плате SuperMini, горит при LOW
 // Кость, которая подставляется, если в команде не сказано иное.
@@ -27,7 +29,23 @@ const uint16_t DEFAULT_SIDES = 20;
 unsigned long lastBatteryAt = 0;
 unsigned long lastBlinkAt   = 0;
 unsigned long lastRollAt    = 0;
+unsigned long lastClockAt   = 0;
 bool          ledOn         = false;
+
+// Что сейчас на экране. Часы перерисовываются раз в минуту только в режиме покоя:
+// результат броска должен стоять, пока посох не взведут заново.
+enum ScreenMode { SCREEN_CLOCK, SCREEN_ARMED, SCREEN_RESULT };
+ScreenMode    screenMode    = SCREEN_CLOCK;
+long          clockMinute   = -1;     // минута, которая сейчас нарисована на экране
+
+// Возвращает экран к часам. Нужна в трёх местах: при старте, при снятии взвода
+// с планшета и когда взвод спал сам.
+void showClock() {
+  long epoch = rtcEpoch();
+  clockMinute = epoch / 60;
+  screenClock(epoch);
+  screenMode = SCREEN_CLOCK;
+}
 
 // Отслеживание связи для журнала: пока планшета нет, строки идут только в монитор порта.
 bool          logWasConnected = false;
@@ -90,6 +108,9 @@ void doRoll(uint8_t count, uint16_t sides) {
   logLine(LOG_ROLL, LOG_INFO, "#%u: %dd%d = %d (%s)", id, r.count, r.sides, r.total, buf);
 
   sendRollEvent(id, ts, r.count, r.sides, r.values, r.total, 0);
+
+  screenMode = SCREEN_RESULT;
+  screenResult(r);   // с анимацией барабана, около секунды; бросок планшету уже ушёл
 
   lastRollAt = millis();
   strikeReset();   // сбрасываем датчик, чтобы дрожание от этого же удара не пошло вторым броском
@@ -226,6 +247,8 @@ void bleOnCommand(JsonDocument& cmd) {
     armedAt    = millis();
     strikeReset();   // забываем дрожание, накопленное до взвода
     logLine(LOG_CHARGE, LOG_INFO, "%dd%d, жду удара", n, d);
+    screenArmed(n, d);
+    screenMode = SCREEN_ARMED;
     sendState();
     return;
   }
@@ -233,6 +256,7 @@ void bleOnCommand(JsonDocument& cmd) {
   if (strcmp(name, "disarm") == 0) {
     armedCount = 0;
     logLine(LOG_CHARGE, LOG_INFO, "снят по команде с планшета");
+    showClock();
     sendState();
     return;
   }
@@ -389,6 +413,9 @@ void setup() {
   diceLoad();
   authBegin();
   batteryBegin();
+  displayBegin();
+  statusBattPct = batteryPercent();   // до первого экрана, чтобы значок не начинался с нуля
+  showClock();
   strikeBegin();
   bleBegin();
   identityBegin();   // после bleBegin: генератор случайных чисел точнее при включённом радио
@@ -404,6 +431,7 @@ void loop() {
   if (bleConnected != logWasConnected) {
     logWasConnected = bleConnected;
     logSink = bleConnected ? bleSendLog : nullptr;
+    displaySetConnected(bleConnected);
     // Каждый новый сеанс связи начинается с закрытой двери, даже если предыдущий
     // её открыл. Отсчёт времени на ввод PIN идёт с этого мгновения.
     authed     = false;
@@ -446,6 +474,7 @@ void loop() {
   if (armedCount && now - armedAt > ARM_TIMEOUT_MS) {
     armedCount = 0;
     logLine(LOG_CHARGE, LOG_INFO, "снят сам: слишком долго ждали удара");
+    showClock();
     sendState();
   }
 
@@ -458,6 +487,19 @@ void loop() {
     logLocal(LOG_BATTERY, LOG_INFO, "%d мВ, %d %%, BLE %s", mv, pct,
              bleConnected ? "подключён" : "реклама");   // только в монитор: у приложения есть bat
     bleSendBattery(mv, pct);
+    displaySetBattery(pct);
+  }
+
+  // Время на экране: раз в секунду спрашиваем DS3231 (чаще незачем, а шина I2C
+  // не бесплатна для опроса датчика), перерисовываем только когда сменилась минута:
+  // крупные часы в покое или мелкое время в углу на остальных экранах.
+  if (now - lastClockAt >= 1000) {
+    lastClockAt = now;
+    long epoch = rtcEpoch();
+    if (epoch / 60 != clockMinute) {
+      clockMinute = epoch / 60;
+      displayTick(epoch, screenMode == SCREEN_CLOCK);
+    }
   }
 
   // Мигание: раз в секунду без телефона, часто при подключённом телефоне.
