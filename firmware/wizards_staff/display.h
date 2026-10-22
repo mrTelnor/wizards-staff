@@ -5,6 +5,7 @@
 #include "config.h"
 #include "dice.h"
 #include "rtc.h"
+#include "log.h"
 
 // Экран 1,54" ST7789, 240×240 точек. Здесь только рисование: что и когда показывать,
 // решает главный цикл. Шрифт встроенный, без кириллицы, поэтому всё на экране латиницей.
@@ -24,9 +25,9 @@ const int TFT_SIZE = 240;   // экран квадратный
 // Разметка экрана по высоте, в точках от верхнего края.
 const int STATUS_Y    = 4;     // строка состояния: время слева, связь и батарея справа
 const int HEADER_Y    = 34;    // «3d6» над результатом
-const int TOTAL_Y     = 66;    // полоса с суммой: в ней же крутится барабан
-const int TOTAL_H     = 96;    // её высота: цифра шрифта 10 высотой 80 и поля
-const int BREAKDOWN_Y = 192;   // слагаемые
+const int TOTAL_Y     = 62;    // полоса с суммой: в ней же крутится барабан
+const int TOTAL_H     = 156;   // её высота: всё между «3d6» и слагаемыми
+const int BREAKDOWN_Y = 222;   // слагаемые, у самого низа экрана
 
 // Цвета, которых нет готовыми в библиотеке. Формат RGB565: 5 бит красного,
 // 6 зелёного, 5 синего.
@@ -168,28 +169,45 @@ void screenArmed(int count, int sides) {
   drawCentered("HIT THE FLOOR", 180, 2, ST77XX_WHITE);
 }
 
-// Размер шрифта суммы по числу знаков. Шрифт 10 даёт цифру 60 точек шириной:
-// три цифры — 180 точек, четыре уже впритык к краям. Длиннее — мельче.
-// Подбирается по самой большой возможной сумме броска, а не по выпавшей:
-// иначе во время барабана цифры прыгали бы в размере.
+// Встроенный шрифт: цифра 5×7 точек в клетке 6×8, шестая колонка и восьмая строка
+// пустые — это промежутки. При увеличении size всё умножается на size.
+// Видимая ширина n цифр: (6n − 1) × size, без пустой колонки за последней.
+// Видимая высота цифры: 7 × size, у цифр нет хвостов вниз.
+int totalInkWidth(int digits, uint8_t size) { return (6 * digits - 1) * size; }
+int totalInkHeight(uint8_t size)            { return 7 * size; }
+
+// Самый крупный шрифт, при котором число из digits цифр помещается в полосу суммы
+// впритык: по ширине экрана или по высоте полосы, что раньше упрётся.
+// Считается по самой большой возможной сумме броска, а не по выпавшей: иначе во
+// время барабана цифры прыгали бы в размере. Одна-две цифры упираются в высоту
+// (шрифт 22 и 21), три — в ширину (14), четыре — 10, пять (10d1000) — 8.
 uint8_t totalTextSize(long largest) {
-  if (largest < 1000)  return 10;
-  if (largest < 10000) return 8;
-  return 6;
+  int digits = 1;
+  for (long v = largest; v >= 10; v /= 10) digits++;
+  int byWidth  = TFT_SIZE / (6 * digits - 1);
+  int byHeight = TOTAL_H / 7;
+  return min(byWidth, byHeight);
+}
+
+// Левый верхний угол курсора, при котором число встаёт ровно по центру полосы.
+// Центруем по видимым точкам сами: getTextBounds библиотеки считает и пустую
+// колонку за последней цифрой, и на крупном шрифте число уезжало бы влево.
+void totalCursor(long value, uint8_t size, int& x, int& y) {
+  int digits = 1;
+  for (long v = value; v >= 10; v /= 10) digits++;
+  x = (TFT_SIZE - totalInkWidth(digits, size)) / 2;
+  y = (TOTAL_H - totalInkHeight(size)) / 2;
 }
 
 // Рисует число по центру полосы суммы в памяти, а не на экране. Сдвиг offset
 // поднимает число вверх: так оно выезжает снизу и уходит за верхний край полосы.
 void drawTotalIn(GFXcanvas16& canvas, long value, int offset, uint8_t size, uint16_t color) {
-  char buf[8];
-  snprintf(buf, sizeof(buf), "%ld", value);
-  int16_t x1, y1;
-  uint16_t w, h;
+  int x, y;
+  totalCursor(value, size, x, y);
   canvas.setTextSize(size);
   canvas.setTextColor(color);
-  canvas.getTextBounds(buf, 0, 0, &x1, &y1, &w, &h);
-  canvas.setCursor((TFT_SIZE - w) / 2, (TOTAL_H - h) / 2 - offset);
-  canvas.print(buf);
+  canvas.setCursor(x, y - offset);
+  canvas.print(value);
 }
 
 // Переносит полосу суммы из памяти на экран одним куском, без мигания.
@@ -199,7 +217,7 @@ void pushTotal(GFXcanvas16& canvas) {
 
 // Смена числа в полосе: старое уезжает вверх, новое выезжает снизу, как в окошке
 // игрового автомата. frames кадров на одну смену: на SPI в 20 МГц кадр полосы
-// уходит на экран примерно за 18 мс, больше трёх кадров на быстром начале не успеть.
+// уходит на экран примерно за 30 мс, больше трёх кадров на быстром начале не успеть.
 void slideTotal(GFXcanvas16& canvas, long from, long to, uint8_t size,
                 uint16_t fromColor, uint16_t toColor, int frames) {
   for (int f = 1; f <= frames; f++) {
@@ -235,10 +253,12 @@ void screenResult(const Roll& r) {
   if (r.count == 1 && r.sides == 20 && r.total == 20) finalColor = ST77XX_YELLOW;
   if (r.count == 1 && r.sides == 20 && r.total == 1)  finalColor = ST77XX_RED;
 
-  // Полоса суммы рисуется в памяти: 240×96 точек по 2 байта, около 45 КБ.
+  // Полоса суммы рисуется в памяти: 240×156 точек по 2 байта, около 73 КБ.
   // Памяти нет — просто показываем итог без барабана.
   GFXcanvas16 canvas(TFT_SIZE, TOTAL_H);
   bool animate = canvas.getBuffer() != nullptr;
+  if (!animate) logLine(LOG_ROLL, LOG_WARN, "нет %u байт памяти под барабан, итог без анимации",
+                       (unsigned)(TFT_SIZE * TOTAL_H * 2));
 
   if (r.count > 1) drawCentered("...", BREAKDOWN_Y, 2, COLOR_GREY);
 
@@ -264,10 +284,13 @@ void screenResult(const Roll& r) {
     // Остановка: выезжает настоящая сумма, уже в полном цвете, и замирает.
     slideTotal(canvas, shown, r.total, size, COLOR_GREY, finalColor, 4);
   } else {
-    char total[8];
-    snprintf(total, sizeof(total), "%d", r.total);
+    int x, y;
+    totalCursor(r.total, size, x, y);
     tft.fillRect(0, TOTAL_Y, TFT_SIZE, TOTAL_H, ST77XX_BLACK);
-    drawCentered(total, TOTAL_Y + (TOTAL_H - 8 * size) / 2, size, finalColor);
+    tft.setTextSize(size);
+    tft.setTextColor(finalColor);
+    tft.setCursor(x, TOTAL_Y + y);
+    tft.print(r.total);
   }
 
   if (r.count > 1) {
