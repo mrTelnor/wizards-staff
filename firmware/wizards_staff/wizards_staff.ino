@@ -3,7 +3,8 @@
 // удар об пол бросает её и отдаёт бросок в Serial и на планшет.
 // Экран (задача 3 основного плана): в покое часы, взведённый посох показывает «3d6»,
 // после удара на экране результат до следующего взвода.
-// Пока нет кнопок, взвод приходит только из приложения; невзведённый посох удары не считает.
+// Взводят кнопки костей на посохе (задача 4) и приложение; невзведённый посох удары не считает.
+// Служебные кнопки пока не опрашиваются.
 #include <LittleFS.h>
 #include "config.h"
 #include "log.h"
@@ -16,6 +17,7 @@
 #include "rtc.h"
 #include "ble.h"
 #include "display.h"
+#include "buttons.h"
 
 const int     PIN_LED       = 8;      // светодиод на плате SuperMini, горит при LOW
 // Кость, которая подставляется, если в команде не сказано иное.
@@ -30,6 +32,7 @@ unsigned long lastBatteryAt = 0;
 unsigned long lastBlinkAt   = 0;
 unsigned long lastRollAt    = 0;
 unsigned long lastClockAt   = 0;
+unsigned long lastButtonAt  = 0;      // последнее нажатие кнопки: сразу после него удар не считаем
 bool          ledOn         = false;
 
 // Что сейчас на экране. Часы перерисовываются раз в минуту только в режиме покоя:
@@ -57,7 +60,7 @@ unsigned long authSince  = 0;       // когда подключились: от
 bool          authClosed = false;   // связь уже разорвана за молчание, второй раз не рвём
 
 // Взвод: какой бросок сделает следующий удар об пол. Ноль в armedCount значит «не взведён»,
-// тогда удары не считаются вовсе. Пока нет кнопок на посохе, взводит приложение командой arm.
+// тогда удары не считаются вовсе. Взводят кнопки костей и приложение командой arm.
 uint8_t       armedCount = 0;
 uint16_t      armedSides = 0;        // два байта: кости бывают до d1000, в байт такая не влезет
 unsigned long armedAt    = 0;         // когда взвели: через ARM_TIMEOUT_MS взвод сам спадает
@@ -72,6 +75,38 @@ void sendState() {
     doc["d"] = armedSides;
   }
   bleSend(doc);
+}
+
+// Взводит посох на n костей по d граней: экран, журнал, планшет. Общая для кнопок
+// и команды arm, чтобы взвод с посоха и с планшета ничем не отличался.
+void armStaff(uint8_t n, uint16_t d) {
+  armedCount = n;
+  armedSides = d;
+  armedAt    = millis();
+  strikeReset();   // забываем дрожание, накопленное до взвода
+  logLine(LOG_CHARGE, LOG_INFO, "%dd%d, жду удара", n, d);
+  screenArmed(n, d);
+  screenMode = SCREEN_ARMED;
+  sendState();
+}
+
+// Нажата кнопка кости. Та же кость добавляет к взводу ещё одну (3d6), другая начинает
+// взвод заново с одной: смешивать кости в броске нельзя, так задумано в ТЗ, раздел 2.
+void onDiceButton(int i) {
+  uint16_t sides = diceSides[i];
+  lastButtonAt = millis();
+  logLine(LOG_BUTTONS, LOG_INFO, "кнопка P%d, кость d%u", i, sides);
+  if (armedCount && armedSides == sides) {
+    if (armedCount >= MAX_DICE) {
+      armedAt = millis();   // взвод не растёт, но и не спадает, раз посох держат в руках
+      logLine(LOG_CHARGE, LOG_INFO, "больше %d костей в броске не бывает, остаётся %dd%u",
+              MAX_DICE, armedCount, sides);
+      return;
+    }
+    armStaff(armedCount + 1, sides);
+  } else {
+    armStaff(1, sides);
+  }
 }
 
 // Отправляет планшету событие roll. Один вид на свежий бросок и на запись из истории:
@@ -242,14 +277,7 @@ void bleOnCommand(JsonDocument& cmd) {
       bleSendError("bad arm", why);
       return;
     }
-    armedCount = n;
-    armedSides = d;
-    armedAt    = millis();
-    strikeReset();   // забываем дрожание, накопленное до взвода
-    logLine(LOG_CHARGE, LOG_INFO, "%dd%d, жду удара", n, d);
-    screenArmed(n, d);
-    screenMode = SCREEN_ARMED;
-    sendState();
+    armStaff(n, d);
     return;
   }
 
@@ -417,6 +445,7 @@ void setup() {
   statusBattPct = batteryPercent();   // до первого экрана, чтобы значок не начинался с нуля
   showClock();
   strikeBegin();
+  buttonsBegin();
   bleBegin();
   identityBegin();   // после bleBegin: генератор случайных чисел точнее при включённом радио
   diceSelfTest();
@@ -457,7 +486,13 @@ void loop() {
   // Удар засчитываем, только если посох взведён и после прошлого броска прошло STRIKE_COOLDOWN_MS.
   bool strike = strikeDetected();
 
-  if (strike && now - lastRollAt > STRIKE_COOLDOWN_MS) {
+  int dice = buttonsPollDice();
+  if (dice >= 0) onDiceButton(dice);
+
+  // Нажатие кнопки само трясёт посох: удар в первые STRIKE_GUARD_MS после него не считаем.
+  if (strike && lastButtonAt && millis() - lastButtonAt < STRIKE_GUARD_MS) {
+    logLine(LOG_STRIKE, LOG_INFO, "удар не засчитан, только что нажали кнопку");
+  } else if (strike && now - lastRollAt > STRIKE_COOLDOWN_MS) {
     if (armedCount) {
       logLine(LOG_STRIKE, LOG_INFO, "удар засчитан, бросаю");
       doRoll(armedCount, armedSides);

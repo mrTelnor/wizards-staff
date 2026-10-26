@@ -26,6 +26,7 @@ static const char* LOG_TIME    = "TIME";      // часы DS3231
 static const char* LOG_BLE     = "BLE";       // связь с планшетом
 static const char* LOG_ID      = "ID";        // номер посоха
 static const char* LOG_STRIKE  = "STRIKE";    // датчик удара и решения по удару
+static const char* LOG_BUTTONS = "BUTTONS";   // расширители PCF8574 и нажатия кнопок
 static const char* LOG_CHARGE  = "CHARGE";    // взвод посоха
 static const char* LOG_ROLL    = "ROLL";      // сам бросок
 static const char* LOG_BATTERY = "BATTERY";   // заряд аккумулятора

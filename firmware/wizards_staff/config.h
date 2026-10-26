@@ -5,7 +5,7 @@
 // В остальном коде номеров нет, только имена отсюда. Распиновка: hardware/wiring.md.
 
 // ===== Версия прошивки, уходит телефону в ответе info =====
-const char* FW_VERSION = "0.6.6";
+const char* FW_VERSION = "0.7.0";
 
 // ===== Ножки платы ESP32-C3 SuperMini =====
 const int PIN_I2C_SDA  = 0;    // шина I2C: часы и расширители кнопок
@@ -46,6 +46,8 @@ const uint16_t HISTORY_FLASH_SIZE = 1500;
 
 // ===== Тайминги, миллисекунды =====
 const unsigned long DEBOUNCE_MS         = 30;      // кнопка должна держаться столько, чтобы засчитаться
+const unsigned long BUTTONS_POLL_MS     = 10;      // как часто читаем расширитель кнопок по шине
+const unsigned long BUTTONS_RETRY_MS    = 1000;    // как часто ищем пропавший расширитель
 const unsigned long LONG_PRESS_MS       = 2000;    // долгое нажатие служебной кнопки
 const unsigned long ARM_TIMEOUT_MS      = 300000;  // взведённый посох без удара возвращается к часам (5 мин, решение автора 2026-09-18)
 const unsigned long RESULT_TIMEOUT_MS   = 300000;  // результат броска без нового взвода возвращается к часам (5 мин, решение автора 2026-10-23)
