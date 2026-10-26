@@ -5,7 +5,7 @@
 // В остальном коде номеров нет, только имена отсюда. Распиновка: hardware/wiring.md.
 
 // ===== Версия прошивки, уходит телефону в ответе info =====
-const char* FW_VERSION = "0.7.3";
+const char* FW_VERSION = "0.8.0";
 
 // ===== Ножки платы ESP32-C3 SuperMini =====
 const int PIN_I2C_SDA  = 0;    // шина I2C: часы и расширители кнопок
@@ -15,7 +15,7 @@ const int PIN_TFT_SCK  = 4;    // дисплей, такт SPI
 const int PIN_TFT_BLK  = 5;    // дисплей, подсветка (ШИМ)
 const int PIN_TFT_MOSI = 6;    // дисплей, данные SPI
 const int PIN_TFT_DC   = 7;    // дисплей, команда/данные
-const int PIN_BUZZER   = 8;    // пищалка через транзистор
+const int PIN_BUZZER   = 8;    // пищалка через транзистор; на ней же синий светодиод платы
 const int PIN_BTN_INT  = 9;    // сигнал от расширителей «нажата кнопка» (пока не используется)
 const int PIN_TFT_RST  = 10;   // дисплей, сброс
 const int PIN_STRIKE   = 20;   // датчик вибрации SW-420, выход DO

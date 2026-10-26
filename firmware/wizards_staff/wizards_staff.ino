@@ -18,8 +18,8 @@
 #include "ble.h"
 #include "display.h"
 #include "buttons.h"
+#include "sound.h"
 
-const int     PIN_LED       = 8;      // светодиод на плате SuperMini, горит при LOW
 // Кость, которая подставляется, если в команде не сказано иное.
 // Тип не случаен. Оператор | у ArduinoJson смотрит на тип значения справа и отдаёт
 // его, если присланное число в этот тип не влезает. Пока константа была uint8_t,
@@ -29,11 +29,9 @@ const int     PIN_LED       = 8;      // светодиод на плате Supe
 const uint16_t DEFAULT_SIDES = 20;
 
 unsigned long lastBatteryAt = 0;
-unsigned long lastBlinkAt   = 0;
 unsigned long lastRollAt    = 0;
 unsigned long lastClockAt   = 0;
 unsigned long lastButtonAt  = 0;      // последнее нажатие кнопки: сразу после него удар не считаем
-bool          ledOn         = false;
 
 // Что сейчас на экране. Часы перерисовываются раз в минуту только в режиме покоя:
 // результат броска должен стоять, пока посох не взведут заново.
@@ -96,6 +94,7 @@ void armStaff(uint8_t n, uint16_t d) {
 void onDiceButton(int i) {
   uint16_t sides = diceSides[i];
   lastButtonAt = millis();
+  soundClick();
   logLine(LOG_BUTTONS, LOG_INFO, "кнопка P%d, кость d%u", i, sides);
   if (armedCount && armedSides == sides) {
     armStaff(armedCount >= MAX_DICE ? 1 : armedCount + 1, sides);
@@ -140,7 +139,10 @@ void doRoll(uint8_t count, uint16_t sides) {
   sendRollEvent(id, ts, r.count, r.sides, r.values, r.total, 0);
 
   screenMode = SCREEN_RESULT;
-  screenResult(r);   // с анимацией барабана, около секунды; бросок планшету уже ушёл
+  screenResult(r);   // с анимацией барабана и тиками, около секунды; бросок планшету уже ушёл
+  if (r.count == 1 && r.sides == 20 && r.total == 20)     soundCrit();
+  else if (r.count == 1 && r.sides == 20 && r.total == 1) soundFail();
+  else                                                    soundChord();
 
   lastRollAt = millis();
   strikeReset();   // сбрасываем датчик, чтобы дрожание от этого же удара не пошло вторым броском
@@ -425,9 +427,8 @@ void reportFlash() {
 }
 
 void setup() {
+  soundBegin();           // первым делом ноль на ножке пищалки, иначе транзистор может приоткрыться
   Serial.begin(115200);
-  pinMode(PIN_LED, OUTPUT);
-  digitalWrite(PIN_LED, HIGH);
   delay(1500);
   rtcBegin();             // первым делом часы: с этого момента у журнала есть настоящее время
   logLine(LOG_BOOT, LOG_INFO, "посох мага, прошивка %s", FW_VERSION);
@@ -444,6 +445,7 @@ void setup() {
   bleBegin();
   identityBegin();   // после bleBegin: генератор случайных чисел точнее при включённом радио
   diceSelfTest();
+  soundStartup();
 }
 
 void loop() {
@@ -541,14 +543,6 @@ void loop() {
       clockMinute = epoch / 60;
       displayTick(epoch, screenMode == SCREEN_CLOCK);
     }
-  }
-
-  // Мигание: раз в секунду без телефона, часто при подключённом телефоне.
-  unsigned long period = bleConnected ? 200 : 1000;
-  if (now - lastBlinkAt >= period) {
-    lastBlinkAt = now;
-    ledOn = !ledOn;
-    digitalWrite(PIN_LED, ledOn ? LOW : HIGH);
   }
   delay(2);   // датчик опрашиваем часто, чтобы не пропустить переключения
 }

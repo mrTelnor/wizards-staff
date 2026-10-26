@@ -6,6 +6,7 @@
 #include "dice.h"
 #include "rtc.h"
 #include "log.h"
+#include "sound.h"
 
 // Экран 1,54" ST7789, 240×240 точек. Здесь только рисование: что и когда показывать,
 // решает главный цикл. Шрифт встроенный, без кириллицы, поэтому всё на экране латиницей.
@@ -320,6 +321,7 @@ void screenResult(const Roll& r) {
       // Повтор того же числа выглядел бы как остановка барабана, поэтому
       // перебрасываем, если выпало прежнее.
       for (int tries = 0; next == shown && tries < 5; tries++) next = random(smallest, largest + 1);
+      soundTick();   // тик на каждой смене числа, замедляется вместе с барабаном
       slideNumber(canvas, win, shown, next, COLOR_GREY, COLOR_GREY, 2);
       shown = next;
       while (millis() - frameAt < step) delay(1);
