@@ -90,20 +90,15 @@ void armStaff(uint8_t n, uint16_t d) {
   sendState();
 }
 
-// Нажата кнопка кости. Та же кость добавляет к взводу ещё одну (3d6), другая начинает
-// взвод заново с одной: смешивать кости в броске нельзя, так задумано в ТЗ, раздел 2.
+// Нажата кнопка кости. Та же кость добавляет к взводу ещё одну (3d6), после MAX_DICE
+// счёт идёт по кругу с одной: перебрал - жми дальше, не нужно снимать взвод.
+// Другая кость начинает взвод заново с одной: смешивать кости в броске нельзя (ТЗ, раздел 2).
 void onDiceButton(int i) {
   uint16_t sides = diceSides[i];
   lastButtonAt = millis();
   logLine(LOG_BUTTONS, LOG_INFO, "кнопка P%d, кость d%u", i, sides);
   if (armedCount && armedSides == sides) {
-    if (armedCount >= MAX_DICE) {
-      armedAt = millis();   // взвод не растёт, но и не спадает, раз посох держат в руках
-      logLine(LOG_CHARGE, LOG_INFO, "больше %d костей в броске не бывает, остаётся %dd%u",
-              MAX_DICE, armedCount, sides);
-      return;
-    }
-    armStaff(armedCount + 1, sides);
+    armStaff(armedCount >= MAX_DICE ? 1 : armedCount + 1, sides);
   } else {
     armStaff(1, sides);
   }
@@ -506,7 +501,9 @@ void loop() {
   }
 
   // Взвод не вечный: посох, забытый взведённым, не должен бросать от случайного стука.
-  if (armedCount && now - armedAt > ARM_TIMEOUT_MS) {
+  // Время свежее, а не now: кнопка взводит в этом же обороте позже now, и разность
+  // ушла бы через ноль в огромное число - взвод снимался бы в момент нажатия.
+  if (armedCount && millis() - armedAt > ARM_TIMEOUT_MS) {
     armedCount = 0;
     logLine(LOG_CHARGE, LOG_INFO, "снят сам: слишком долго ждали удара");
     showClock();
