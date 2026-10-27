@@ -139,78 +139,126 @@
   <polyline class="sig" points="796,545 768,545 768,345 1100,345 1100,450 1200,450"/>
   <text class="note" x="980" y="338" fill="#1d6fb8">SCK, ножка 4</text>
 
-  <!-- ================= ШИНА I2C ================= -->
-  <text class="title" x="40" y="560" fill="#555">Шина I2C: часы и кнопки</text>
-  <polyline class="i2c2" points="796,680 640,680 640,800 160,800"/>
-  <polyline class="i2c" points="796,725 660,725 660,820 130,820"/>
-  <text class="pin" x="420" y="795" fill="#c2185b">SCL</text>
-  <text class="pin" x="420" y="833" fill="#7b2cbf">SDA</text>
+  <!-- ================= ШИНА I2C: цепочка ================= -->
+  <text class="title" x="40" y="560" fill="#555">Шина I2C: цепочка расширителей и часы</text>
+  <text class="note" x="40" y="585">Цепочка: плата → PCF №1 → PCF №2 → часы DS3231.</text>
+  <text class="note" x="40" y="601">К плате идут только 4 провода от входа PCF №1.</text>
+  <text class="note" x="40" y="617">PCF №2 втыкается входной гребёнкой в выходное гнездо №1.</text>
+  <text class="note" x="40" y="633">Часы: 4 провода от выходного гнезда №2. Соединять по подписям,</text>
+  <text class="note" x="40" y="649">порядок контактов у часов и расширителя разный. INT не подключать.</text>
 
-  <!-- DS3231 -->
-  <rect class="box" x="40" y="860" width="160" height="100"/>
-  <text class="title" x="50" y="905">DS3231</text>
-  <text class="note" x="50" y="922">часы, адрес 0x68</text>
-  <text class="note" x="50" y="938">батарейка CR2032</text>
-  <circle class="dot" cx="70" cy="860" r="4"/><text class="pin" x="60" y="878">VCC</text>
-  <circle class="dot" cx="100" cy="860" r="4"/><text class="pin" x="88" y="878">GND</text>
-  <circle class="dot" cx="130" cy="860" r="4"/><text class="pin" x="120" y="878">SDA</text>
-  <circle class="dot" cx="160" cy="860" r="4"/><text class="pin" x="150" y="878">SCL</text>
-  <polyline class="sig" points="70,860 70,845" stroke="#2a9d4a"/><text class="f3" x="58" y="840">3V3</text>
-  <polyline class="gndw" points="100,860 100,850"/><use href="#gnd" x="100" y="834" transform="rotate(180 100 842)"/>
-  <polyline class="i2c" points="130,820 130,860"/><circle class="dot" cx="130" cy="820" r="4"/>
-  <polyline class="i2c2" points="160,800 160,860"/><circle class="dot" cx="160" cy="800" r="4"/>
+  <!-- с платы на вход PCF №1 -->
+  <polyline class="i2c2" points="796,680 770,680 770,875 740,875"/>
+  <polyline class="i2c" points="796,725 785,725 785,893 740,893"/>
+  <polyline class="sig" points="740,911 754,911" stroke="#2a9d4a"/><text class="f3" x="757" y="915">3V3</text>
+  <polyline class="gndw" points="740,929 752,929"/><use href="#gnd" x="752" y="929" transform="rotate(-90 752 929)"/>
 
-  <!-- PCF8574 #1 кубики -->
-  <rect class="box" x="240" y="860" width="230" height="100"/>
-  <text class="title" x="250" y="905">PCF8574T №1</text>
-  <text class="note" x="250" y="922">адрес 0x20: A0 A1 A2 = 0 0 0</text>
-  <text class="note" x="250" y="938">8 кнопок кубиков</text>
-  <circle class="dot" cx="260" cy="860" r="4"/><text class="pin" x="250" y="878">VCC</text>
-  <circle class="dot" cx="290" cy="860" r="4"/><text class="pin" x="279" y="878">GND</text>
-  <circle class="dot" cx="320" cy="860" r="4"/><text class="pin" x="310" y="878">SDA</text>
-  <circle class="dot" cx="350" cy="860" r="4"/><text class="pin" x="340" y="878">SCL</text>
-  <text class="pin" x="371" y="878" fill="#999">INT —</text>
-  <polyline class="sig" points="260,860 260,845" stroke="#2a9d4a"/><text class="f3" x="248" y="840">3V3</text>
-  <polyline class="gndw" points="290,860 290,850"/><use href="#gnd" x="290" y="834" transform="rotate(180 290 842)"/>
-  <polyline class="i2c" points="320,820 320,860"/><circle class="dot" cx="320" cy="820" r="4"/>
-  <polyline class="i2c2" points="350,800 350,860"/><circle class="dot" cx="350" cy="800" r="4"/>
+  <!-- PCF8574 №1 кости: вход справа, выход слева -->
+  <rect class="box" x="520" y="860" width="220" height="100"/>
+  <text class="note" x="740" y="852" text-anchor="end">вход</text>
+  <text class="note" x="520" y="852">выход</text>
+  <text class="title" x="630" y="896" text-anchor="middle">PCF8574T №1</text>
+  <text class="note" x="630" y="914" text-anchor="middle">адрес 0x20</text>
+  <text class="note" x="630" y="930" text-anchor="middle">A0 A1 A2 = 0 0 0</text>
+  <text class="note" x="630" y="946" text-anchor="middle">кнопки костей</text>
+  <circle class="dot" cx="740" cy="875" r="4"/>
+  <text class="pin" x="734" y="879" text-anchor="end">SCL</text>
+  <circle class="dot" cx="740" cy="893" r="4"/>
+  <text class="pin" x="734" y="897" text-anchor="end">SDA</text>
+  <circle class="dot" cx="740" cy="911" r="4"/>
+  <text class="pin" x="734" y="915" text-anchor="end">VCC</text>
+  <circle class="dot" cx="740" cy="929" r="4"/>
+  <text class="pin" x="734" y="933" text-anchor="end">GND</text>
+  <circle cx="740" cy="947" r="4" fill="#999"/>
+  <text class="pin" x="734" y="951" text-anchor="end" fill="#999">INT —</text>
+  <circle class="dot" cx="520" cy="875" r="4"/>
+  <text class="pin" x="526" y="879">SCL</text>
+  <circle class="dot" cx="520" cy="893" r="4"/>
+  <text class="pin" x="526" y="897">SDA</text>
+  <circle class="dot" cx="520" cy="911" r="4"/>
+  <text class="pin" x="526" y="915">VCC</text>
+  <circle class="dot" cx="520" cy="929" r="4"/>
+  <text class="pin" x="526" y="933">GND</text>
+  <circle cx="520" cy="947" r="4" fill="#999"/>
+  <text class="pin" x="526" y="951" fill="#999">INT —</text>
   <g>
-    <circle class="dot" cx="250" cy="960" r="3"/><line class="sig" x1="250" y1="960" x2="250" y2="985"/><rect class="btn" x="243" y="985" width="14" height="14"/><line class="gndw" x1="250" y1="999" x2="250" y2="1030"/><text class="lbl" x="243" y="1048">d2</text><text class="lbl" x="245" y="975">P0</text>
-    <circle class="dot" cx="278" cy="960" r="3"/><line class="sig" x1="278" y1="960" x2="278" y2="985"/><rect class="btn" x="271" y="985" width="14" height="14"/><line class="gndw" x1="278" y1="999" x2="278" y2="1030"/><text class="lbl" x="271" y="1048">d4</text><text class="lbl" x="273" y="975">P1</text>
-    <circle class="dot" cx="306" cy="960" r="3"/><line class="sig" x1="306" y1="960" x2="306" y2="985"/><rect class="btn" x="299" y="985" width="14" height="14"/><line class="gndw" x1="306" y1="999" x2="306" y2="1030"/><text class="lbl" x="299" y="1048">d6</text><text class="lbl" x="301" y="975">P2</text>
-    <circle class="dot" cx="334" cy="960" r="3"/><line class="sig" x1="334" y1="960" x2="334" y2="985"/><rect class="btn" x="327" y="985" width="14" height="14"/><line class="gndw" x1="334" y1="999" x2="334" y2="1030"/><text class="lbl" x="327" y="1048">d8</text><text class="lbl" x="329" y="975">P3</text>
-    <circle class="dot" cx="362" cy="960" r="3"/><line class="sig" x1="362" y1="960" x2="362" y2="985"/><rect class="btn" x="355" y="985" width="14" height="14"/><line class="gndw" x1="362" y1="999" x2="362" y2="1030"/><text class="lbl" x="352" y="1048">d10</text><text class="lbl" x="357" y="975">P4</text>
-    <circle class="dot" cx="390" cy="960" r="3"/><line class="sig" x1="390" y1="960" x2="390" y2="985"/><rect class="btn" x="383" y="985" width="14" height="14"/><line class="gndw" x1="390" y1="999" x2="390" y2="1030"/><text class="lbl" x="380" y="1048">d12</text><text class="lbl" x="385" y="975">P5</text>
-    <circle class="dot" cx="418" cy="960" r="3"/><line class="sig" x1="418" y1="960" x2="418" y2="985"/><rect class="btn" x="411" y="985" width="14" height="14"/><line class="gndw" x1="418" y1="999" x2="418" y2="1030"/><text class="lbl" x="408" y="1048">d20</text><text class="lbl" x="413" y="975">P6</text>
-    <circle class="dot" cx="446" cy="960" r="3"/><line class="sig" x1="446" y1="960" x2="446" y2="985"/><rect class="btn" x="439" y="985" width="14" height="14"/><line class="gndw" x1="446" y1="999" x2="446" y2="1030"/><text class="lbl" x="433" y="1048">d100</text><text class="lbl" x="441" y="975">P7</text>
+    <circle class="dot" cx="532" cy="960" r="3"/><line class="sig" x1="532" y1="960" x2="532" y2="985"/><rect class="btn" x="525" y="985" width="14" height="14"/><line class="gndw" x1="532" y1="999" x2="532" y2="1030"/><text class="lbl" x="532" y="1048" text-anchor="middle">d2</text><text class="lbl" x="527" y="975">P0</text>
+    <circle class="dot" cx="560" cy="960" r="3"/><line class="sig" x1="560" y1="960" x2="560" y2="985"/><rect class="btn" x="553" y="985" width="14" height="14"/><line class="gndw" x1="560" y1="999" x2="560" y2="1030"/><text class="lbl" x="560" y="1048" text-anchor="middle">d4</text><text class="lbl" x="555" y="975">P1</text>
+    <circle class="dot" cx="588" cy="960" r="3"/><line class="sig" x1="588" y1="960" x2="588" y2="985"/><rect class="btn" x="581" y="985" width="14" height="14"/><line class="gndw" x1="588" y1="999" x2="588" y2="1030"/><text class="lbl" x="588" y="1048" text-anchor="middle">d6</text><text class="lbl" x="583" y="975">P2</text>
+    <circle class="dot" cx="616" cy="960" r="3"/><line class="sig" x1="616" y1="960" x2="616" y2="985"/><rect class="btn" x="609" y="985" width="14" height="14"/><line class="gndw" x1="616" y1="999" x2="616" y2="1030"/><text class="lbl" x="616" y="1048" text-anchor="middle">d8</text><text class="lbl" x="611" y="975">P3</text>
+    <circle class="dot" cx="644" cy="960" r="3"/><line class="sig" x1="644" y1="960" x2="644" y2="985"/><rect class="btn" x="637" y="985" width="14" height="14"/><line class="gndw" x1="644" y1="999" x2="644" y2="1030"/><text class="lbl" x="644" y="1048" text-anchor="middle">d10</text><text class="lbl" x="639" y="975">P4</text>
+    <circle class="dot" cx="672" cy="960" r="3"/><line class="sig" x1="672" y1="960" x2="672" y2="985"/><rect class="btn" x="665" y="985" width="14" height="14"/><line class="gndw" x1="672" y1="999" x2="672" y2="1030"/><text class="lbl" x="672" y="1048" text-anchor="middle">d12</text><text class="lbl" x="667" y="975">P5</text>
+    <circle class="dot" cx="700" cy="960" r="3"/><line class="sig" x1="700" y1="960" x2="700" y2="985"/><rect class="btn" x="693" y="985" width="14" height="14"/><line class="gndw" x1="700" y1="999" x2="700" y2="1030"/><text class="lbl" x="700" y="1048" text-anchor="middle">d20</text><text class="lbl" x="695" y="975">P6</text>
+    <circle class="dot" cx="728" cy="960" r="3"/><line class="sig" x1="728" y1="960" x2="728" y2="985"/><rect class="btn" x="721" y="985" width="14" height="14"/><line class="gndw" x1="728" y1="999" x2="728" y2="1030"/><text class="lbl" x="728" y="1048" text-anchor="middle">d100</text><text class="lbl" x="723" y="975">P7</text>
+    <polyline class="gndw" points="532,1030 760,1030"/><use href="#gnd" x="760" y="1030"/>
+  </g>
+
+  <!-- №1 → №2: гребёнка №2 в гнезде №1 -->
+  <polyline class="i2c2" points="520,875 470,875"/>
+  <polyline class="i2c" points="520,893 470,893"/>
+  <polyline class="sig" stroke="#2a9d4a" points="520,911 470,911"/>
+  <polyline class="gndw" points="520,929 470,929"/>
+
+  <!-- PCF8574 №2 служебные и меню -->
+  <rect class="box" x="240" y="860" width="230" height="100"/>
+  <text class="note" x="470" y="852" text-anchor="end">вход</text>
+  <text class="note" x="240" y="852">выход</text>
+  <text class="title" x="355" y="896" text-anchor="middle">PCF8574T №2</text>
+  <text class="note" x="355" y="914" text-anchor="middle">адрес 0x21</text>
+  <text class="note" x="355" y="930" text-anchor="middle">A0 = 1</text>
+  <text class="note" x="355" y="946" text-anchor="middle">служебные и меню</text>
+  <circle class="dot" cx="470" cy="875" r="4"/>
+  <text class="pin" x="464" y="879" text-anchor="end">SCL</text>
+  <circle class="dot" cx="470" cy="893" r="4"/>
+  <text class="pin" x="464" y="897" text-anchor="end">SDA</text>
+  <circle class="dot" cx="470" cy="911" r="4"/>
+  <text class="pin" x="464" y="915" text-anchor="end">VCC</text>
+  <circle class="dot" cx="470" cy="929" r="4"/>
+  <text class="pin" x="464" y="933" text-anchor="end">GND</text>
+  <circle cx="470" cy="947" r="4" fill="#999"/>
+  <text class="pin" x="464" y="951" text-anchor="end" fill="#999">INT —</text>
+  <circle class="dot" cx="240" cy="875" r="4"/>
+  <text class="pin" x="246" y="879">SCL</text>
+  <circle class="dot" cx="240" cy="893" r="4"/>
+  <text class="pin" x="246" y="897">SDA</text>
+  <circle class="dot" cx="240" cy="911" r="4"/>
+  <text class="pin" x="246" y="915">VCC</text>
+  <circle class="dot" cx="240" cy="929" r="4"/>
+  <text class="pin" x="246" y="933">GND</text>
+  <circle cx="240" cy="947" r="4" fill="#999"/>
+  <text class="pin" x="246" y="951" fill="#999">INT —</text>
+  <g>
+    <circle class="dot" cx="250" cy="960" r="3"/><line class="sig" x1="250" y1="960" x2="250" y2="985"/><rect class="btn" x="243" y="985" width="14" height="14"/><line class="gndw" x1="250" y1="999" x2="250" y2="1030"/><text class="lbl" x="250" y="1048" text-anchor="middle">Сброс</text><text class="lbl" x="245" y="975">P0</text>
+    <circle class="dot" cx="278" cy="960" r="3"/><line class="sig" x1="278" y1="960" x2="278" y2="985"/><rect class="btn" x="271" y="985" width="14" height="14"/><line class="gndw" x1="278" y1="999" x2="278" y2="1030"/><text class="lbl" x="278" y="1062" text-anchor="middle">Повтор</text><text class="lbl" x="273" y="975">P1</text>
+    <circle class="dot" cx="306" cy="960" r="3"/><line class="sig" x1="306" y1="960" x2="306" y2="985"/><rect class="btn" x="299" y="985" width="14" height="14"/><line class="gndw" x1="306" y1="999" x2="306" y2="1030"/><text class="lbl" x="306" y="1048" text-anchor="middle">Свет</text><text class="lbl" x="301" y="975">P2</text>
+    <circle class="dot" cx="334" cy="960" r="3"/><line class="sig" x1="334" y1="960" x2="334" y2="985"/><rect class="btn" x="327" y="985" width="14" height="14"/><line class="gndw" x1="334" y1="999" x2="334" y2="1030"/><text class="lbl" x="334" y="1062" text-anchor="middle">Тихо</text><text class="lbl" x="329" y="975">P3</text>
+    <circle class="dot" cx="362" cy="960" r="3"/><line class="sig" x1="362" y1="960" x2="362" y2="985"/><rect class="btn" x="355" y="985" width="14" height="14"/><line class="gndw" x1="362" y1="999" x2="362" y2="1030"/><text class="lbl" x="362" y="1048" text-anchor="middle">ОК</text><text class="lbl" x="357" y="975">P4</text>
+    <circle class="dot" cx="390" cy="960" r="3"/><line class="sig" x1="390" y1="960" x2="390" y2="985"/><rect class="btn" x="383" y="985" width="14" height="14"/><line class="gndw" x1="390" y1="999" x2="390" y2="1030"/><text class="lbl" x="390" y="1062" text-anchor="middle">Назад</text><text class="lbl" x="385" y="975">P5</text>
+    <circle class="dot" cx="418" cy="960" r="3"/><line class="sig" x1="418" y1="960" x2="418" y2="985"/><rect class="btn" x="411" y="985" width="14" height="14"/><line class="gndw" x1="418" y1="999" x2="418" y2="1030"/><text class="lbl" x="418" y="1048" text-anchor="middle">Вперёд</text><text class="lbl" x="413" y="975">P6</text>
+    <circle class="dot" cx="446" cy="960" r="3"/><line class="sig" x1="446" y1="960" x2="446" y2="985"/><rect class="btn" x="439" y="985" width="14" height="14"/><line class="gndw" x1="446" y1="999" x2="446" y2="1030"/><text class="lbl" x="446" y="1062" text-anchor="middle">Отмена</text><text class="lbl" x="441" y="975">P7</text>
     <polyline class="gndw" points="250,1030 470,1030"/><use href="#gnd" x="470" y="1030"/>
   </g>
 
-  <!-- PCF8574 #2 служебные -->
-  <rect class="box" x="520" y="860" width="230" height="100"/>
-  <text class="title" x="530" y="905">PCF8574T №2</text>
-  <text class="note" x="530" y="922">адрес 0x21: A0 = 1</text>
-  <text class="note" x="530" y="938">4 служебные + 4 меню</text>
-  <circle class="dot" cx="540" cy="860" r="4"/><text class="pin" x="530" y="878">VCC</text>
-  <circle class="dot" cx="570" cy="860" r="4"/><text class="pin" x="559" y="878">GND</text>
-  <circle class="dot" cx="600" cy="860" r="4"/><text class="pin" x="590" y="878">SDA</text>
-  <circle class="dot" cx="630" cy="860" r="4"/><text class="pin" x="620" y="878">SCL</text>
-  <text class="pin" x="651" y="878" fill="#999">INT —</text>
-  <polyline class="sig" points="540,860 540,845" stroke="#2a9d4a"/><text class="f3" x="528" y="840">3V3</text>
-  <polyline class="gndw" points="570,860 570,850"/><use href="#gnd" x="570" y="834" transform="rotate(180 570 842)"/>
-  <polyline class="i2c" points="600,820 600,860"/><circle class="dot" cx="600" cy="820" r="4"/>
-  <polyline class="i2c2" points="630,800 630,860"/><circle class="dot" cx="630" cy="800" r="4"/>
-  <g>
-    <circle class="dot" cx="535" cy="960" r="3"/><line class="sig" x1="535" y1="960" x2="535" y2="985"/><rect class="btn" x="528" y="985" width="14" height="14"/><line class="gndw" x1="535" y1="999" x2="535" y2="1030"/><text class="lbl" x="535" y="1048" text-anchor="middle">Сброс</text><text class="lbl" x="530" y="975">P0</text>
-    <circle class="dot" cx="563" cy="960" r="3"/><line class="sig" x1="563" y1="960" x2="563" y2="985"/><rect class="btn" x="556" y="985" width="14" height="14"/><line class="gndw" x1="563" y1="999" x2="563" y2="1030"/><text class="lbl" x="563" y="1062" text-anchor="middle">Повтор</text><text class="lbl" x="558" y="975">P1</text>
-    <circle class="dot" cx="591" cy="960" r="3"/><line class="sig" x1="591" y1="960" x2="591" y2="985"/><rect class="btn" x="584" y="985" width="14" height="14"/><line class="gndw" x1="591" y1="999" x2="591" y2="1030"/><text class="lbl" x="591" y="1048" text-anchor="middle">Свет</text><text class="lbl" x="586" y="975">P2</text>
-    <circle class="dot" cx="619" cy="960" r="3"/><line class="sig" x1="619" y1="960" x2="619" y2="985"/><rect class="btn" x="612" y="985" width="14" height="14"/><line class="gndw" x1="619" y1="999" x2="619" y2="1030"/><text class="lbl" x="619" y="1062" text-anchor="middle">Тихо</text><text class="lbl" x="614" y="975">P3</text>
-    <circle class="dot" cx="647" cy="960" r="3"/><line class="sig" x1="647" y1="960" x2="647" y2="985"/><rect class="btn" x="640" y="985" width="14" height="14"/><line class="gndw" x1="647" y1="999" x2="647" y2="1030"/><text class="lbl" x="647" y="1048" text-anchor="middle">ОК</text><text class="lbl" x="642" y="975">P4</text>
-    <circle class="dot" cx="675" cy="960" r="3"/><line class="sig" x1="675" y1="960" x2="675" y2="985"/><rect class="btn" x="668" y="985" width="14" height="14"/><line class="gndw" x1="675" y1="999" x2="675" y2="1030"/><text class="lbl" x="675" y="1062" text-anchor="middle">Назад</text><text class="lbl" x="670" y="975">P5</text>
-    <circle class="dot" cx="703" cy="960" r="3"/><line class="sig" x1="703" y1="960" x2="703" y2="985"/><rect class="btn" x="696" y="985" width="14" height="14"/><line class="gndw" x1="703" y1="999" x2="703" y2="1030"/><text class="lbl" x="703" y="1048" text-anchor="middle">Вперёд</text><text class="lbl" x="698" y="975">P6</text>
-    <circle class="dot" cx="731" cy="960" r="3"/><line class="sig" x1="731" y1="960" x2="731" y2="985"/><rect class="btn" x="724" y="985" width="14" height="14"/><line class="gndw" x1="731" y1="999" x2="731" y2="1030"/><text class="lbl" x="731" y="1062" text-anchor="middle">Отмена</text><text class="lbl" x="726" y="975">P7</text>
-    <polyline class="gndw" points="535,1030 750,1030"/><use href="#gnd" x="750" y="1030"/>
-  </g>
+  <!-- №2 → часы: 4 провода по подписям -->
+  <polyline class="i2c2" points="240,875 190,875"/>
+  <polyline class="i2c" points="240,893 190,893"/>
+  <polyline class="sig" stroke="#2a9d4a" points="240,911 190,911"/>
+  <polyline class="gndw" points="240,929 190,929"/>
+
+  <!-- DS3231 последний в цепочке -->
+  <rect class="box" x="40" y="860" width="150" height="100"/>
+  <text class="title" x="50" y="893">DS3231</text>
+  <text class="note" x="50" y="911">часы, 0x68</text>
+  <text class="note" x="50" y="927">батарейка</text>
+  <text class="note" x="50" y="943">CR2032</text>
+  <circle class="dot" cx="190" cy="875" r="4"/>
+  <text class="pin" x="184" y="879" text-anchor="end">SCL</text>
+  <circle class="dot" cx="190" cy="893" r="4"/>
+  <text class="pin" x="184" y="897" text-anchor="end">SDA</text>
+  <circle class="dot" cx="190" cy="911" r="4"/>
+  <text class="pin" x="184" y="915" text-anchor="end">VCC</text>
+  <circle class="dot" cx="190" cy="929" r="4"/>
+  <text class="pin" x="184" y="933" text-anchor="end">GND</text>
   <text class="note" x="40" y="1085">Кнопка замыкает вход расширителя на землю. Резисторы не нужны: подтяжка внутри чипа. Колпачки цветные, без цифр.</text>
   <text class="note" x="40" y="1101">INT не подключать. Земля кнопок в рукояти: по шине из гребёнки «папа» на каждую группу, 9-й штырь — провод к GND.</text>
 
@@ -346,7 +394,7 @@
   <text class="note" x="1462" y="634">аккумулятора пополам, ножка 3 читает 1,6–2,1 В.</text>
   <text class="note" x="1462" y="650">4,2 В это 100 %, 3,3 В это 0 %.</text>
   <text class="note" x="1462" y="676" font-weight="bold">I2C.</text>
-  <text class="note" x="1462" y="692">SDA ножка 0, SCL ножка 1, на все три модуля.</text>
+  <text class="note" x="1462" y="692">SDA 0, SCL 1. Цепочка: плата → №1 → №2 → часы.</text>
   <text class="note" x="1462" y="708">Адреса: DS3231 0x68, PCF №1 0x20, PCF №2 0x21,</text>
   <text class="note" x="1462" y="724">чипы PCF8574T, перемычки A0–A2.</text>
   <text class="note" x="1462" y="740">INT не подключать: ножка 9 — кнопка BOOT.</text>
