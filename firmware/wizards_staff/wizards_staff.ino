@@ -19,6 +19,7 @@
 #include "display.h"
 #include "buttons.h"
 #include "sound.h"
+#include "lights.h"
 
 // Кость, которая подставляется, если в команде не сказано иное.
 // Тип не случаен. Оператор | у ArduinoJson смотрит на тип значения справа и отдаёт
@@ -426,12 +427,37 @@ void reportFlash() {
           (unsigned)((LittleFS.totalBytes() - LittleFS.usedBytes()) / 1024));
 }
 
+// Пишет в журнал, почему плата перезапустилась. Нужна, чтобы отличить обычное включение
+// от просадки питания: при просадке (brownout) плата молча перезапускается, и снаружи
+// это выглядит как долгий старт или зависание.
+void reportResetReason() {
+  esp_reset_reason_t why = esp_reset_reason();
+  const char* text;
+  switch (why) {
+    case ESP_RST_POWERON:   text = "включение питания"; break;
+    case ESP_RST_SW:        text = "перезапуск из программы (например, после заливки)"; break;
+    case ESP_RST_EXT:       text = "кнопка RESET"; break;
+    case ESP_RST_BROWNOUT:  text = "ПРОСАДКА ПИТАНИЯ (brownout)"; break;
+    case ESP_RST_PANIC:     text = "сбой прошивки (panic)"; break;
+    case ESP_RST_INT_WDT:
+    case ESP_RST_TASK_WDT:
+    case ESP_RST_WDT:       text = "сторожевой таймер: прошивка зависла"; break;
+    case ESP_RST_USB:       text = "перезапуск по USB"; break;
+    default:                text = "другая"; break;
+  }
+  bool bad = why == ESP_RST_BROWNOUT || why == ESP_RST_PANIC
+          || why == ESP_RST_INT_WDT || why == ESP_RST_TASK_WDT || why == ESP_RST_WDT;
+  logLine(LOG_BOOT, bad ? LOG_WARN : LOG_INFO, "причина запуска: %s (код %d)", text, (int)why);
+}
+
 void setup() {
   soundBegin();           // первым делом ноль на ножке пищалки, иначе транзистор может приоткрыться
+  ringBegin();            // и сразу гасим кольцо: до этого оно светит мусором от загрузчика
   Serial.begin(115200);
   delay(1500);
   rtcBegin();             // первым делом часы: с этого момента у журнала есть настоящее время
   logLine(LOG_BOOT, LOG_INFO, "посох мага, прошивка %s", FW_VERSION);
+  reportResetReason();
   reportFlash();
   historyBegin();
   diceLoad();
@@ -445,6 +471,7 @@ void setup() {
   bleBegin();
   identityBegin();   // после bleBegin: генератор случайных чисел точнее при включённом радио
   diceSelfTest();
+  ringStartup();          // огненная вспышка и угасание: посох готов, дальше кольцо не горит
   soundStartup();
 }
 
