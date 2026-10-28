@@ -6,7 +6,7 @@
 // Взводят кнопки костей на посохе (задача 4) и приложение; невзведённый посох удары не считает.
 // Взвод не спадает сам. Через SLEEP_TIMEOUT_MS без действий экран засыпает, будят его кость,
 // удар по взведённому посоху и команды arm и roll с планшета.
-// Служебные кнопки пока не опрашиваются.
+// Служебные кнопки и кнопки меню опрашиваются, но действий у них пока нет: только пробуждение экрана.
 #include <LittleFS.h>
 #include "config.h"
 #include "log.h"
@@ -131,6 +131,39 @@ void onDiceButton(int i) {
   } else {
     armStaff(1, sides);
   }
+}
+
+// Служебные кнопки, которые разбудили экран: их короткое или долгое нажатие
+// в этот раз ничего не делает (SPEC 2.5: во сне служебные кнопки только будят).
+uint8_t svcWokeScreen = 0;
+
+// Событие служебной кнопки или кнопки меню. Пока только будит экран и пишет в журнал,
+// действия кнопок появятся следующими шагами плана.
+void onServiceEvent(const ServiceEvent& ev) {
+  uint8_t bit = 1 << ev.button;
+  const char* name = SERVICE_NAMES[ev.button];
+  noteActivity();
+
+  if (ev.kind == SVC_DOWN) {
+    lastButtonAt = millis();   // нажатие трясёт посох: удар сразу после него не считаем
+    if (screenAsleep) {
+      svcWokeScreen |= bit;
+      wakeScreen();
+      // Во сне на экране могли быть только часы или взвод: результат к этому времени
+      // уже сменился часами (RESULT_TIMEOUT_MS короче SLEEP_TIMEOUT_MS).
+      if (armedCount) { screenArmed(armedCount, armedSides); screenMode = SCREEN_ARMED; }
+      else            showClock();
+      logLine(LOG_BUTTONS, LOG_INFO, "служебная P%d (%s) разбудила экран", ev.button, name);
+    } else {
+      svcWokeScreen &= ~bit;
+      soundClick();
+    }
+    return;
+  }
+
+  if (svcWokeScreen & bit) return;   // это нажатие уже потрачено на пробуждение
+  logLine(LOG_BUTTONS, LOG_INFO, "служебная P%d (%s): %s", ev.button, name,
+          ev.kind == SVC_LONG ? "долго" : "коротко");
 }
 
 // Отправляет планшету событие roll. Один вид на свежий бросок и на запись из истории:
@@ -565,6 +598,9 @@ void loop() {
 
   int dice = buttonsPollDice();
   if (dice >= 0) onDiceButton(dice);
+
+  ServiceEvent svc = buttonsPollService();
+  if (svc.button >= 0) onServiceEvent(svc);
 
   // Нажатие кнопки само трясёт посох: удар в первые STRIKE_GUARD_MS после него не считаем.
   if (strike && lastButtonAt && millis() - lastButtonAt < STRIKE_GUARD_MS) {

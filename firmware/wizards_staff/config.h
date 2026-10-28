@@ -5,7 +5,7 @@
 // В остальном коде номеров нет, только имена отсюда. Распиновка: hardware/wiring.md.
 
 // ===== Версия прошивки, уходит телефону в ответе info =====
-const char* FW_VERSION = "0.12.0";
+const char* FW_VERSION = "0.13.0";
 
 // ===== Ножки платы ESP32-C3 SuperMini =====
 const int PIN_I2C_SDA  = 0;    // шина I2C: часы и расширители кнопок
@@ -67,6 +67,17 @@ const unsigned long BATTERY_PERIOD_MS   = 10000;   // как часто мери
 // ===== Аккумулятор: границы для перевода напряжения в проценты =====
 const int BATTERY_FULL_MV  = 4200;   // 100 %
 const int BATTERY_EMPTY_MV = 3300;   // 0 %
+
+// ===== Служебные кнопки и кнопки меню: входы второго расширителя (I2C_ADDR_SERVICE) =====
+// Подключение: hardware/wiring.md, что делают: SPEC, раздел 2.5.
+const int BTN_RESET   = 0;   // Сброс
+const int BTN_REPEAT  = 1;   // Повтор
+const int BTN_LIGHT   = 2;   // Свет
+const int BTN_SILENT  = 3;   // Тихо
+const int BTN_OK      = 4;   // ОК
+const int BTN_PREV    = 5;   // ◄ Назад
+const int BTN_NEXT    = 6;   // ► Вперёд
+const int BTN_CANCEL  = 7;   // Отмена
 
 // ===== Тестовый режим d20: ТОЛЬКО ДЛЯ ПРОВЕРКИ, перед игрой поставить false =====
 // Броски 1d20 идут по кругу: случайный, 20, случайный, 1. Так вспышки и звуки
