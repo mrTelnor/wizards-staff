@@ -126,9 +126,25 @@ void sendHistoryRecord(const HistoryRecord& r) {
   sendRollEvent(r.id, r.ts, r.count, r.sides, r.values, r.total, r.flags);
 }
 
+// Тестовый режим d20 (TEST_D20_CYCLE в config.h): подменяет итог броска 1d20 по кругу
+// «случайный, 20, случайный, 1». Остальные броски не трогает.
+uint32_t testD20Rolls = 0;   // сколько бросков 1d20 было с включения
+
+void applyTestD20(Roll& r) {
+  if (!TEST_D20_CYCLE || r.count != 1 || r.sides != 20) return;
+  int step = testD20Rolls++ % 4;
+  if (step == 1) r.values[0] = 20;
+  if (step == 3) r.values[0] = 1;
+  r.total = r.values[0];
+  if (step == 1 || step == 3) {
+    logLine(LOG_ROLL, LOG_WARN, "тестовый режим: d20 подменён на %d", r.total);
+  }
+}
+
 // Делает бросок, печатает его и отправляет на планшет.
 void doRoll(uint8_t count, uint16_t sides) {
   Roll r = rollDice(count, sides);
+  applyTestD20(r);
   uint32_t id = historyNextId();        // номер сквозной, во флеш, не начинается заново
   uint32_t ts = rtcEpoch();             // ноль, если часов нет: планшет подставит своё время
   if (!historyPush(r, id, ts, 0)) logLine(LOG_HISTORY, LOG_ERROR, "бросок не записан во флеш");
@@ -458,6 +474,10 @@ void setup() {
   rtcBegin();             // первым делом часы: с этого момента у журнала есть настоящее время
   logLine(LOG_BOOT, LOG_INFO, "посох мага, прошивка %s", FW_VERSION);
   reportResetReason();
+  if (TEST_D20_CYCLE) {
+    logLine(LOG_BOOT, LOG_WARN, "ТЕСТОВЫЙ РЕЖИМ d20: случайный, 20, случайный, 1 по кругу. "
+            "Перед игрой TEST_D20_CYCLE = false в config.h");
+  }
   reportFlash();
   historyBegin();
   diceLoad();
