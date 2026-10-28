@@ -2,8 +2,10 @@
 // отвечает на info, time, arm, disarm и roll. Приложение взводит посох на нужную кость,
 // удар об пол бросает её и отдаёт бросок в Serial и на планшет.
 // Экран (задача 3 основного плана): в покое часы, взведённый посох показывает «3d6»,
-// после удара на экране результат до следующего взвода.
+// после удара на экране результат, через RESULT_TIMEOUT_MS снова часы.
 // Взводят кнопки костей на посохе (задача 4) и приложение; невзведённый посох удары не считает.
+// Взвод не спадает сам. Через SLEEP_TIMEOUT_MS без действий экран засыпает, будят его кость,
+// удар по взведённому посоху и команды arm и roll с планшета.
 // Служебные кнопки пока не опрашиваются.
 #include <LittleFS.h>
 #include "config.h"
@@ -41,12 +43,37 @@ ScreenMode    screenMode    = SCREEN_CLOCK;
 long          clockMinute   = -1;     // минута, которая сейчас нарисована на экране
 
 // Возвращает экран к часам. Нужна в трёх местах: при старте, при снятии взвода
-// с планшета и когда взвод спал сам.
+// с планшета и когда результат простоял RESULT_TIMEOUT_MS.
 void showClock() {
   long epoch = rtcEpoch();
   clockMinute = epoch / 60;
   screenClock(epoch);
   screenMode = SCREEN_CLOCK;
+}
+
+// Сон экрана. Отсчёт SLEEP_TIMEOUT_MS идёт от последнего действия: нажатия кнопки,
+// взвода, броска. Спит только экран, плата работает: слушает кнопки, датчик и планшет.
+bool          screenAsleep   = false;
+unsigned long lastActivityAt = 0;
+
+// Запоминает, что посохом только что пользовались: сон откладывается.
+void noteActivity() {
+  lastActivityAt = millis();
+}
+
+// Будит экран, если он спит. Картинку рисует тот, кто будил: взвод, бросок.
+void wakeScreen() {
+  if (!screenAsleep) return;
+  screenAsleep = false;
+  displayWake();
+  logLine(LOG_BOOT, LOG_INFO, "экран проснулся");
+}
+
+// Гасит экран: подсветку и саму матрицу.
+void sleepScreen() {
+  screenAsleep = true;
+  displaySleep();
+  logLine(LOG_BOOT, LOG_INFO, "экран уснул: %lu с без действий", SLEEP_TIMEOUT_MS / 1000);
 }
 
 // Отслеживание связи для журнала: пока планшета нет, строки идут только в монитор порта.
@@ -60,9 +87,9 @@ bool          authClosed = false;   // связь уже разорвана за
 
 // Взвод: какой бросок сделает следующий удар об пол. Ноль в armedCount значит «не взведён»,
 // тогда удары не считаются вовсе. Взводят кнопки костей и приложение командой arm.
+// Взвод живёт, пока его не сбросят или не бросят (решение автора 2026-10-28, раньше спадал за 5 мин).
 uint8_t       armedCount = 0;
 uint16_t      armedSides = 0;        // два байта: кости бывают до d1000, в байт такая не влезет
-unsigned long armedAt    = 0;         // когда взвели: через ARM_TIMEOUT_MS взвод сам спадает
 
 // Рассказывает телефону, чего посох сейчас ждёт.
 void sendState() {
@@ -78,10 +105,12 @@ void sendState() {
 
 // Взводит посох на n костей по d граней: экран, журнал, планшет. Общая для кнопок
 // и команды arm, чтобы взвод с посоха и с планшета ничем не отличался.
+// Будит спящий экран: взвод с кнопки и с планшета должен быть виден сразу.
 void armStaff(uint8_t n, uint16_t d) {
+  wakeScreen();
+  noteActivity();
   armedCount = n;
   armedSides = d;
-  armedAt    = millis();
   strikeReset();   // забываем дрожание, накопленное до взвода
   logLine(LOG_CHARGE, LOG_INFO, "%dd%d, жду удара", n, d);
   screenArmed(n, d);
@@ -141,8 +170,10 @@ void applyTestD20(Roll& r) {
   }
 }
 
-// Делает бросок, печатает его и отправляет на планшет.
+// Делает бросок, печатает его и отправляет на планшет. Будит спящий экран:
+// удар по взведённому посоху во сне сразу показывает результат.
 void doRoll(uint8_t count, uint16_t sides) {
+  wakeScreen();
   Roll r = rollDice(count, sides);
   applyTestD20(r);
   uint32_t id = historyNextId();        // номер сквозной, во флеш, не начинается заново
@@ -162,6 +193,7 @@ void doRoll(uint8_t count, uint16_t sides) {
   else                                                    soundChord();
 
   lastRollAt = millis();
+  noteActivity();  // отсчёт до часов и до сна идёт от момента, когда результат встал на экран
   strikeReset();   // сбрасываем датчик, чтобы дрожание от этого же удара не пошло вторым броском
 }
 
@@ -248,8 +280,7 @@ void bleOnCommand(JsonDocument& cmd) {
     doc["pinset"]  = authIsSet();          // задан ли на посохе PIN
     doc["authed"]  = authed;               // открыт ли вход в этом сеансе связи
     doc["hist"]    = HISTORY_FLASH_SIZE;   // ёмкость истории во флеш, а не экранной
-    doc["arm"]     = ARM_TIMEOUT_MS / 1000;   // через сколько секунд спадает взвод: приложение
-                                             // показывает это число, чтобы не хранить его у себя
+    doc["arm"]     = 0;   // через сколько секунд спадает взвод; 0 — не спадает (с 2026-10-28)
     doc["ts"]      = rtcEpoch();  // время посоха: приложение покажет его рядом со своим
     JsonArray dice = doc["dice"].to<JsonArray>();
     for (int i = 0; i < 8; i++) dice.add(diceSides[i]);
@@ -258,8 +289,8 @@ void bleOnCommand(JsonDocument& cmd) {
     // То же самое строками для человека: под фильтром «Инфо» машинный JSON скрыт,
     // и без них команда info выглядела бы как будто посох промолчал. Разложено по модулям,
     // чтобы каждая строка попала в тот же раздел журнала, что и её собратья при старте.
-    logLine(LOG_BOOT, LOG_INFO, "прошивка %s, взвод живёт %lu с",
-            FW_VERSION, ARM_TIMEOUT_MS / 1000);
+    logLine(LOG_BOOT, LOG_INFO, "прошивка %s, взвод не спадает, сон экрана через %lu с",
+            FW_VERSION, SLEEP_TIMEOUT_MS / 1000);
     logLine(LOG_ID, LOG_INFO, "посох ID %u, MAC %s", staffId, bleMac().c_str());
     logLine(LOG_HISTORY, LOG_INFO, "%u из %u записей", historyCount, (unsigned)HISTORY_FLASH_SIZE);
 
@@ -493,6 +524,7 @@ void setup() {
   diceSelfTest();
   ringStartup();          // огненная вспышка и угасание: посох готов, дальше кольцо не горит
   soundStartup();
+  noteActivity();         // отсчёт до сна с конца запуска
 }
 
 void loop() {
@@ -550,23 +582,19 @@ void loop() {
     logLine(LOG_STRIKE, LOG_INFO, "удар не засчитан, пауза после броска");
   }
 
-  // Взвод не вечный: посох, забытый взведённым, не должен бросать от случайного стука.
-  // Время свежее, а не now: кнопка взводит в этом же обороте позже now, и разность
-  // ушла бы через ноль в огромное число - взвод снимался бы в момент нажатия.
-  if (armedCount && millis() - armedAt > ARM_TIMEOUT_MS) {
-    armedCount = 0;
-    logLine(LOG_CHARGE, LOG_INFO, "снят сам: слишком долго ждали удара");
-    showClock();
-    sendState();
-  }
-
-  // Результат тоже не вечный: через RESULT_TIMEOUT_MS без нового взвода экран
+  // Результат не вечный: через RESULT_TIMEOUT_MS без нового взвода экран
   // возвращается к часам. lastRollAt ставится после анимации, так что отсчёт идёт
   // от момента, когда сумма встала на экране. Время берём свежее, а не now: бросок
   // в этом же проходе цикла ставит lastRollAt позже now, и разность ушла бы через
   // ноль в огромное число — результат тут же сменился бы часами.
   if (screenMode == SCREEN_RESULT && millis() - lastRollAt > RESULT_TIMEOUT_MS) {
     showClock();
+  }
+
+  // Сон: SLEEP_TIMEOUT_MS без действий в любом состоянии, и взведённый посох тоже засыпает.
+  // Время свежее по той же причине, что выше: lastActivityAt могли поставить в этом проходе.
+  if (!screenAsleep && millis() - lastActivityAt > SLEEP_TIMEOUT_MS) {
+    sleepScreen();
   }
 
   // Раз в 10 с: заряд в журнал и отдельным сообщением планшету для рейки.
@@ -584,10 +612,11 @@ void loop() {
   // Время на экране: раз в секунду спрашиваем DS3231 (чаще незачем, а шина I2C
   // не бесплатна для опроса датчика), перерисовываем только когда сменилась минута:
   // крупные часы в покое или мелкое время в углу на остальных экранах.
+  // Во сне не рисуем: проснувшись, первый же проход увидит сменившуюся минуту и дорисует.
   if (now - lastClockAt >= 1000) {
     lastClockAt = now;
     long epoch = rtcEpoch();
-    if (epoch / 60 != clockMinute) {
+    if (!screenAsleep && epoch / 60 != clockMinute) {
       clockMinute = epoch / 60;
       displayTick(epoch, screenMode == SCREEN_CLOCK);
     }
