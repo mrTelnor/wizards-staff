@@ -7,6 +7,7 @@
 #include "rtc.h"
 #include "log.h"
 #include "sound.h"
+#include "lights.h"
 
 // Экран 1,54" ST7789, 240×240 точек. Здесь только рисование: что и когда показывать,
 // решает главный цикл. Шрифт встроенный, без кириллицы, поэтому всё на экране латиницей.
@@ -300,9 +301,11 @@ void screenResult(const Roll& r) {
   long largest  = (long)r.count * r.sides;      // на всех максимум
   RollWindow win = rollWindow(largest);
 
-  uint16_t finalColor = ST77XX_WHITE;
-  if (r.count == 1 && r.sides == 20 && r.total == 20) finalColor = ST77XX_YELLOW;
-  if (r.count == 1 && r.sides == 20 && r.total == 1)  finalColor = ST77XX_RED;
+  // Цвет итога на экране и вспышка кольца в момент, когда сумма вырастает.
+  uint16_t  finalColor = ST77XX_WHITE;
+  RingFlash flash      = RING_FLASH_WHITE;
+  if (r.count == 1 && r.sides == 20 && r.total == 20) { finalColor = ST77XX_YELLOW; flash = RING_FLASH_CRIT; }
+  if (r.count == 1 && r.sides == 20 && r.total == 1)  { finalColor = ST77XX_RED;    flash = RING_FLASH_FAIL; }
 
   if (r.count > 1) drawCentered("...", BREAKDOWN_Y, 2, COLOR_GREY);
 
@@ -331,7 +334,8 @@ void screenResult(const Roll& r) {
     // вспыхивает крупнее и встаёт на место.
     slideNumber(canvas, win, shown, r.total, COLOR_GREY, finalColor, 3);
     showNumber(canvas, win, r.total, win.size + FLASH_GROW, finalColor);
-    delay(FLASH_MS);
+    ringFlash(flash);   // кольцо вспыхивает вместе с ростом суммы
+    ringWait(FLASH_MS);
     showNumber(canvas, win, r.total, win.size, finalColor);
   } else {
     logLine(LOG_ROLL, LOG_WARN, "нет %u байт памяти под барабан, итог без анимации",
@@ -341,6 +345,7 @@ void screenResult(const Roll& r) {
     tft.setCursor(win.x + (win.w - totalInkWidth(digitsOf(r.total), win.size)) / 2,
                   win.y + (win.h - totalInkHeight(win.size)) / 2);
     tft.print(r.total);
+    ringFlash(flash);
   }
 
   if (r.count > 1) {

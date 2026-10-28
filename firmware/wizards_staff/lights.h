@@ -61,3 +61,87 @@ void ringStartup() {
   ring.clear();
   ring.show();
 }
+
+// ===== Вспышка при итоге броска =====
+// В отличие от стартовой анимации не блокирует: вспышку запускает ringFlash(), а кадры
+// дорисовывает ringUpdate() из главного цикла и ringWait() из пауз между нотами.
+// Так золотая вспышка горит прямо под фанфару, а не после неё.
+
+enum RingFlash { RING_FLASH_NONE, RING_FLASH_WHITE, RING_FLASH_CRIT, RING_FLASH_FAIL };
+
+// Как вспышка меняется во времени: нарастает за rise, держится hold, гаснет за fade, всё в мс.
+struct RingFlashShape { unsigned long rise, hold, fade; };
+const RingFlashShape RING_SHAPE_WHITE = {  0,  40,  300 };   // обычный бросок: короткая белая
+const RingFlashShape RING_SHAPE_CRIT  = { 60, 600,  900 };   // 20 на d20: золотая, ровная
+const RingFlashShape RING_SHAPE_FAIL  = { 60, 900, 1200 };   // 1 на d20: красная, мерцает как огонь, гаснет вместе с тромбоном
+
+RingFlash     ringFlashKind = RING_FLASH_NONE;   // какая вспышка идёт сейчас
+unsigned long ringFlashAt   = 0;                 // когда началась
+unsigned long ringFrameAt   = 0;                 // когда рисовали последний кадр
+
+// Яркость вспышки от 0 до 1 через t мс после начала, или -1, когда вспышка кончилась.
+// На спаде квадрат: свет долго тает и только в конце гаснет, глазу так мягче.
+float ringFlashLevel(const RingFlashShape& s, unsigned long t) {
+  if (t < s.rise) return (float)t / s.rise;
+  t -= s.rise;
+  if (t < s.hold) return 1.0f;
+  t -= s.hold;
+  if (t < s.fade) {
+    float left = 1.0f - (float)t / s.fade;
+    return left * left;
+  }
+  return -1.0f;
+}
+
+// Рисует очередной кадр вспышки, если пора. Вызывать часто: из loop() и из ringWait().
+// Кадры не чаще RING_FRAME_MS: чаще глаз не заметит, а шине кольца лишняя работа.
+void ringUpdate() {
+  if (ringFlashKind == RING_FLASH_NONE) return;
+  unsigned long now = millis();
+  if (now - ringFrameAt < RING_FRAME_MS) return;
+  ringFrameAt = now;
+
+  const RingFlashShape& shape = ringFlashKind == RING_FLASH_CRIT ? RING_SHAPE_CRIT
+                              : ringFlashKind == RING_FLASH_FAIL ? RING_SHAPE_FAIL
+                              : RING_SHAPE_WHITE;
+  float level = ringFlashLevel(shape, now - ringFlashAt);
+  if (level < 0) {                 // догорела: гасим кольцо и больше не рисуем
+    ringFlashKind = RING_FLASH_NONE;
+    ring.clear();
+    ring.show();
+    return;
+  }
+
+  for (int i = 0; i < RING_LEDS; i++) {
+    uint32_t c;
+    if (ringFlashKind == RING_FLASH_WHITE) {
+      uint8_t v = level * 255;
+      c = ring.Color(v, v, v);
+    } else if (ringFlashKind == RING_FLASH_CRIT) {
+      c = ring.Color(level * 255, level * 170, 0);              // золото: красный и чуть меньше зелёного
+    } else {
+      int flicker = random(50, 101);                            // каждый огонёк от 50 до 100 %
+      c = ring.Color(level * 255 * flicker / 100, 0, 0);
+    }
+    ring.setPixelColor(i, c);
+  }
+  ring.show();
+}
+
+// Запускает вспышку и сразу рисует первый кадр. Новая вспышка заменяет недогоревшую.
+void ringFlash(RingFlash kind) {
+  ringFlashKind = kind;
+  ringFlashAt   = millis();
+  ringFrameAt   = ringFlashAt - RING_FRAME_MS;   // чтобы ringUpdate нарисовал кадр не дожидаясь
+  ringUpdate();
+}
+
+// Пауза на ms миллисекунд, во время которой кольцо продолжает вспышку.
+// Ей заменяется delay() там, где посох ждёт посреди вспышки: ноты и рост суммы на экране.
+void ringWait(unsigned long ms) {
+  unsigned long startedAt = millis();
+  while (millis() - startedAt < ms) {
+    ringUpdate();
+    delay(1);
+  }
+}
