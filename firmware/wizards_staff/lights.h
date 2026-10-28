@@ -73,7 +73,7 @@ enum RingFlash { RING_FLASH_NONE, RING_FLASH_WHITE, RING_FLASH_CRIT, RING_FLASH_
 struct RingFlashShape { unsigned long rise, hold, fade; };
 const RingFlashShape RING_SHAPE_WHITE = {  0,  40,  300 };   // обычный бросок: короткая белая
 const RingFlashShape RING_SHAPE_CRIT  = { 60, 600,  900 };   // 20 на d20: золотая, ровная
-const RingFlashShape RING_SHAPE_FAIL  = { 60, 900, 1200 };   // 1 на d20: красная, мерцает как огонь, гаснет вместе с тромбоном
+const RingFlashShape RING_SHAPE_FAIL  = { 60, 2300, 1200 };  // 1 на d20: красная, мерцает как огонь, гаснет вместе с фразой провала
 
 RingFlash     ringFlashKind = RING_FLASH_NONE;   // какая вспышка идёт сейчас
 unsigned long ringFlashAt   = 0;                 // когда началась

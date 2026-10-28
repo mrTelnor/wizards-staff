@@ -5,7 +5,7 @@
 // В остальном коде номеров нет, только имена отсюда. Распиновка: hardware/wiring.md.
 
 // ===== Версия прошивки, уходит телефону в ответе info =====
-const char* FW_VERSION = "0.11.0";
+const char* FW_VERSION = "0.12.0";
 
 // ===== Ножки платы ESP32-C3 SuperMini =====
 const int PIN_I2C_SDA  = 0;    // шина I2C: часы и расширители кнопок
@@ -53,9 +53,9 @@ const unsigned long DEBOUNCE_MS         = 30;      // кнопка должна 
 const unsigned long BUTTONS_POLL_MS     = 10;      // как часто читаем расширитель кнопок по шине
 const unsigned long BUTTONS_RETRY_MS    = 1000;    // как часто ищем пропавший расширитель
 const unsigned long LONG_PRESS_MS       = 2000;    // долгое нажатие служебной кнопки
-const unsigned long ARM_TIMEOUT_MS      = 300000;  // взведённый посох без удара возвращается к часам (5 мин, решение автора 2026-09-18)
-const unsigned long RESULT_TIMEOUT_MS   = 300000;  // результат броска без нового взвода возвращается к часам (5 мин, решение автора 2026-10-23)
-const unsigned long SLEEP_TIMEOUT_MS    = 180000;  // 3 минуты бездействия: экран гаснет
+// Взвод не спадает сам (решение автора 2026-10-28, раньше 5 мин): только сброс или бросок.
+const unsigned long RESULT_TIMEOUT_MS   = 90000;   // результат без действий возвращается к часам (1,5 мин, решение автора 2026-10-28, было 5)
+const unsigned long SLEEP_TIMEOUT_MS    = 120000;  // 2 минуты без действий: экран засыпает (решение автора 2026-10-28, было 3)
 const unsigned long STRIKE_GUARD_MS     = 300;     // после нажатия кнопки удар не считаем
 const unsigned long STRIKE_COOLDOWN_MS  = 5000;    // после броска датчик не слушаем: стол ещё дрожит, посох звенит
 const unsigned long STRIKE_WINDOW_MS    = 100;     // окно, в котором считаем переключения датчика
