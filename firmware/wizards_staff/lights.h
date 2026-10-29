@@ -89,15 +89,18 @@ unsigned long ringFrameAt   = 0;                 // когда рисовали 
 enum GlowMode { GLOW_OFF, GLOW_DIM, GLOW_BRIGHT };
 const char* const GLOW_MODE_NAMES[3] = { "выкл", "тускло", "ярко" };
 
-// Палитра: цвет остывшего огонька и цвет раскалённого. Каждый светодиод переливается
-// между ними по своему накалу. Белый взят тёплым: холодный у WS2812B синеват и тянет больше тока.
-struct GlowPalette { uint8_t cold[3], hot[3]; const char* name; };
+// Палитра: два цвета, между которыми переливается каждый огонёк по своему накалу,
+// от первого (накал 0) ко второму (накал 255). Яркость заложена в сами цвета: тёмный
+// цвет записан тёмным. Раньше яркость общим множителем росла с накалом и у пары
+// «фиолетовый — тёмно-фиолетовый» съедала разницу: оба конца выходили одинаковыми.
+// Белый взят тёплым: холодный у WS2812B синеват и тянет больше тока.
+struct GlowPalette { uint8_t from[3], to[3]; const char* name; };
 const GlowPalette GLOW_PALETTES[] = {
-  { { 255,   0,   0 }, { 255, 100,   0 }, "красный - оранжевый" },
-  { { 255, 220, 160 }, { 255, 190,   0 }, "белый - жёлтый" },
-  { {   0, 120,   0 }, { 100, 255,  60 }, "тёмно-зелёный - светло-зелёный" },
-  { {   0, 170, 255 }, {   0,   0, 255 }, "голубой - синий" },
-  { { 200,   0, 255 }, {  90,   0, 160 }, "фиолетовый - тёмно-фиолетовый" },
+  { { 130,   0,   0 }, { 255, 100,   0 }, "красный - оранжевый" },
+  { { 130, 110,  80 }, { 255, 190,   0 }, "белый - жёлтый" },
+  { {   0,  60,   0 }, { 100, 255,  60 }, "тёмно-зелёный - светло-зелёный" },
+  { {   0, 255, 200 }, {   0,   0, 255 }, "голубой - синий" },
+  { { 230,  40, 255 }, {  40,   0,  90 }, "фиолетовый - тёмно-фиолетовый" },
 };
 const int GLOW_PALETTE_COUNT = sizeof(GLOW_PALETTES) / sizeof(GLOW_PALETTES[0]);
 
@@ -121,8 +124,8 @@ void glowLoad() {
   if (glowMode > GLOW_BRIGHT) glowMode = GLOW_OFF;
   if (glowPalette >= GLOW_PALETTE_COUNT) glowPalette = 0;
   for (int i = 0; i < RING_LEDS; i++) {
-    glowHeat[i]   = random(60, 256);
-    glowTarget[i] = random(60, 256);
+    glowHeat[i]   = random(0, 256);
+    glowTarget[i] = random(0, 256);
   }
 }
 
@@ -141,8 +144,7 @@ void glowFadeIn() {
 }
 
 // Один кадр свечения. Накал каждого огонька ползёт к своей случайной цели, дошёл —
-// получает новую. От накала зависит и цвет (от остывшего к раскалённому), и яркость:
-// раскалённый огонёк в два раза ярче остывшего.
+// получает новую. По накалу цвет огонька идёт от первого цвета палитры ко второму.
 void glowFrame(unsigned long now) {
   float fade = (float)(now - glowSince) / GLOW_FADE_IN_MS;
   if (fade > 1.0f) fade = 1.0f;
@@ -152,13 +154,13 @@ void glowFrame(unsigned long now) {
   for (int i = 0; i < RING_LEDS; i++) {
     int h = glowHeat[i];
     h += (glowTarget[i] - h) / GLOW_STEP;
-    if (abs(glowTarget[i] - h) < GLOW_STEP) glowTarget[i] = random(60, 256);
+    if (abs(glowTarget[i] - h) < GLOW_STEP) glowTarget[i] = random(0, 256);   // весь путь: от цвета к цвету
     glowHeat[i] = h;
 
     float k = h / 255.0f;
-    float bright = level / 255.0f * fade * (0.5f + 0.5f * k);
+    float bright = level / 255.0f * fade;
     uint8_t c[3];
-    for (int j = 0; j < 3; j++) c[j] = (p.cold[j] + (p.hot[j] - p.cold[j]) * k) * bright;
+    for (int j = 0; j < 3; j++) c[j] = (p.from[j] + (p.to[j] - p.from[j]) * k) * bright;
     ring.setPixelColor(i, ring.Color(c[0], c[1], c[2]));
   }
   ring.show();
