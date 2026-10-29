@@ -317,13 +317,7 @@
   <rect class="res" x="1060" y="802" width="50" height="16"/>
   <text class="pin" x="1058" y="796">470 Ом</text>
   <polyline class="sig" points="1110,810 1200,810"/>
-  <!-- конденсатор на правых площадках кольца -->
-  <polyline class="plus" points="1400,785 1430,785 1430,802"/>
-  <line x1="1420" y1="804" x2="1440" y2="804" stroke="#222" stroke-width="2.5"/>
-  <line x1="1420" y1="810" x2="1440" y2="810" stroke="#222" stroke-width="2.5"/>
-  <polyline class="gndw" points="1430,812 1430,835 1400,835"/>
-  <text class="pin" x="1436" y="798">+</text>
-  <text class="note" x="1200" y="880">1000 мкФ 16 В между 5V и GND у кольца</text>
+  <text class="note" x="1200" y="880">конденсатора нет: выбивал защиту TP4056 (2026-10-29)</text>
 
   <!-- ================= ЗВУК ================= -->
   <polyline class="sig" points="964,545 1010,545 1010,960 1020,960"/>
@@ -402,8 +396,8 @@
   <text class="note" x="1462" y="782">SCK 4, MOSI 6, DC 7, RST 10, BL 5. CS на землю.</text>
   <text class="note" x="1462" y="798">На модуле: SCL = SCK, SDA = MOSI, RST = RES, BL = BLK.</text>
   <text class="note" x="1462" y="824" font-weight="bold">Кольцо.</text>
-  <text class="note" x="1462" y="840">Ножка 21 → 470 Ом → DI. Конденсатор 1000 мкФ</text>
-  <text class="note" x="1462" y="856">сглаживает бросок тока при вспышке.</text>
+  <text class="note" x="1462" y="840">Ножка 21 → 470 Ом → DI. Без конденсатора: 1000 мкФ</text>
+  <text class="note" x="1462" y="856">выбивал защиту TP4056 при включении, wiring.md.</text>
   <text class="note" x="1462" y="872">Если мерцает: первый светодиод через диод 1N4007.</text>
   <text class="note" x="1462" y="898" font-weight="bold">Датчик удара.</text>
   <text class="note" x="1462" y="914">SW-420 дёргает выход DO при встряске, ножка 20.</text>
