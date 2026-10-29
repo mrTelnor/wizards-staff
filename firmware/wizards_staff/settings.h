@@ -71,9 +71,10 @@ void settingsSave() {
   prefs.end();
 }
 
-// Таймаут человеческими словами для экрана: «30 S», «1 MIN», «1.5 MIN».
+// Таймаут человеческими словами для экрана: «30 с», «1 мин», «1,5 мин». Строка UTF-8,
+// русская буква — два байта: буфер out не меньше 16 байт, лучше 32.
 void settingsFormatMs(unsigned long ms, char* out, size_t len) {
-  if (ms < 60000) snprintf(out, len, "%lu S", ms / 1000);
-  else if (ms % 60000 == 0) snprintf(out, len, "%lu MIN", ms / 60000);
-  else snprintf(out, len, "%lu.%lu MIN", ms / 60000, (ms % 60000) / 6000);
+  if (ms < 60000) snprintf(out, len, "%lu с", ms / 1000);
+  else if (ms % 60000 == 0) snprintf(out, len, "%lu мин", ms / 60000);
+  else snprintf(out, len, "%lu,%lu мин", ms / 60000, (ms % 60000) / 6000);
 }

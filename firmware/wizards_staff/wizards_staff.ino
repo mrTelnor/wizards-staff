@@ -344,7 +344,7 @@ void sendHistoryRecord(const HistoryRecord& r) {
   sendRollEvent(r.id, r.ts, r.count, r.sides, r.values, r.total, r.flags);
 }
 
-// Тестовый режим d20 (пункт TEST D20 в меню, по умолчанию TEST_D20_CYCLE): подменяет итог броска 1d20 по кругу
+// Тестовый режим d20 (пункт «Тест d20» в меню, по умолчанию TEST_D20_CYCLE): подменяет итог броска 1d20 по кругу
 // «случайный, 20, случайный, 1». Остальные броски не трогает.
 uint32_t testD20Rolls = 0;   // сколько бросков 1d20 было с включения
 
@@ -555,7 +555,7 @@ void bleOnCommand(JsonDocument& cmd) {
       return;
     }
     rtcSaveSynced(true);
-    // На экране часов могла гореть пометка TIME NOT SET: перерисовываем, она пропадёт.
+    // На экране часов могла гореть пометка «Время не задано»: перерисовываем, она пропадёт.
     if (screenMode == SCREEN_CLOCK && !screenAsleep) showClock();
     char buf[24];
     rtcFormat(rtcEpoch(), buf, sizeof(buf));
@@ -710,6 +710,23 @@ void reportResetReason() {
   logLine(LOG_BOOT, bad ? LOG_WARN : LOG_INFO, "причина запуска: %s (код %d)", text, (int)why);
 }
 
+// Проверка русского шрифта (FONT_TEST в config.h): показывает таблицу букв и ждёт любую
+// кнопку, кости или служебную, потом возвращает часы. Служебную ждём до отпускания
+// (короткое или долгое нажатие), а не до касания: иначе её отпускание дошло бы до главного
+// цикла, и, например, ОК открыл бы меню. Вызывать в setup() после buttonsBegin().
+void fontTestWait() {
+  logLine(LOG_BOOT, LOG_WARN, "ПРОВЕРКА ШРИФТА: экран с буквами до нажатия любой кнопки. "
+          "После проверки FONT_TEST = false в config.h");
+  screenFontTest();
+  while (true) {
+    if (buttonsPollDice() >= 0) break;
+    ServiceEvent svc = buttonsPollService();
+    if (svc.kind == SVC_SHORT || svc.kind == SVC_LONG) break;
+    delay(5);   // отдаём время системе, иначе сработает сторожевой таймер
+  }
+  showClock();
+}
+
 void setup() {
   soundBegin();           // первым делом ноль на ножке пищалки, иначе транзистор может приоткрыться
   ringBegin();            // и сразу гасим кольцо: до этого оно светит мусором от загрузчика
@@ -721,7 +738,7 @@ void setup() {
   settingsLoad();         // до первого экрана и звука: яркость, громкость, тестовый режим
   if (settings.testD20) {
     logLine(LOG_BOOT, LOG_WARN, "ТЕСТОВЫЙ РЕЖИМ d20: случайный, 20, случайный, 1 по кругу. "
-            "Перед игрой выключить: меню, TEST D20");
+            "Перед игрой выключить: меню, Тест d20");
   }
   reportFlash();
   historyBegin();
@@ -735,6 +752,7 @@ void setup() {
   showClock();
   strikeBegin();
   buttonsBegin();
+  if (FONT_TEST) fontTestWait();
   bleBegin();
   identityBegin();   // после bleBegin: генератор случайных чисел точнее при включённом радио
   diceSelfTest();

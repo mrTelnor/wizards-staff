@@ -9,9 +9,13 @@
 #include "log.h"
 #include "sound.h"
 #include "lights.h"
+#include "text.h"
 
 // Экран 1,54" ST7789, 240×240 точек. Здесь только рисование: что и когда показывать,
-// решает главный цикл. Шрифт встроенный, без кириллицы, поэтому всё на экране латиницей.
+// решает главный цикл. Надписи по-русски: текст печатается через text.h (латиница и цифры
+// встроенным шрифтом, русские буквы своим). Строка с верхом в y занимает по высоте
+// от y − 2·size до y + 8·size: над ней запас под точки Ё и кратку Й (шапка text.h).
+// Числа и время печатаются по-прежнему tft.print, ширина любой строки — только textWidth.
 
 // Режим SPI и поворот подбираются под конкретный модуль. Наш модуль без ножки CS
 // откликается только в режиме 3 (подобрано 2026-10-22 скетчем tools/display_test,
@@ -31,7 +35,7 @@ const int HEADER_Y    = 34;    // «3d6» над результатом
 const int TOTAL_Y     = 66;    // полоса с суммой: в ней же крутится барабан
 const int TOTAL_H     = 96;    // её высота: цифра шрифта 10 высотой 80 и поля
 const int BREAKDOWN_Y = 192;   // слагаемые
-const int CLOCK_NOTE_Y = 196;  // на экране часов надпись TIME NOT SET под датой
+const int CLOCK_NOTE_Y = 196;  // на экране часов надпись «Время не задано» под датой
 
 // Цвета, которых нет готовыми в библиотеке. Формат RGB565: 5 бит красного,
 // 6 зелёного, 5 синего.
@@ -49,7 +53,7 @@ bool statusConnected = false;
 bool statusShowTime  = false;   // на экране часов мелкое время в углу не нужно
 
 uint8_t displayBacklight = 255;  // яркость подсветки из меню, ставит её settingsApply()
-bool    displayTestMark  = false; // тестовый режим d20 включён: на взводе 1d20 пометка TEST
+bool    displayTestMark  = false; // тестовый режим d20 включён: на взводе 1d20 пометка «ТЕСТ»
 
 // Запускает экран и включает подсветку. Вызывать один раз в setup().
 // SPI поднимаем сами со своими ножками: если это сделает библиотека, она возьмёт
@@ -86,18 +90,13 @@ void displayWake() {
   analogWrite(PIN_TFT_BLK, displayBacklight);
 }
 
-// Печатает строку по центру экрана по горизонтали, верх строки на высоте y.
-// size — увеличение встроенного шрифта: 1 это 6×8 точек на букву, 2 это 12×16 и так далее.
-// Фон закрашивается чёрным под каждой буквой, поэтому строку той же длины можно
-// перерисовать поверх старой без мигания всего экрана.
+// Печатает строку UTF-8 по центру экрана по горизонтали, верх строки на высоте y.
+// size — увеличение шрифта: 1 это 6×8 точек на букву, 2 это 12×16 и так далее.
+// Фон закрашивается чёрным под каждой буквой и в полосе 2·size над строкой, поэтому
+// строку той же длины можно перерисовать поверх старой без мигания всего экрана.
+// Короткая обёртка над drawTextCentered из text.h: у экранов фон всегда чёрный.
 void drawCentered(const char* text, int y, uint8_t size, uint16_t color) {
-  int16_t x1, y1;
-  uint16_t w, h;
-  tft.setTextSize(size);
-  tft.setTextColor(color, ST77XX_BLACK);
-  tft.getTextBounds(text, 0, y, &x1, &y1, &w, &h);
-  tft.setCursor((TFT_SIZE - w) / 2, y);
-  tft.print(text);
+  drawTextCentered(tft, y, text, size, color, ST77XX_BLACK);
 }
 
 // ===== Строка состояния =====
@@ -121,7 +120,7 @@ void drawBattery() {
   tft.fillRect(right - widest, STATUS_Y, widest + 1, 17, ST77XX_BLACK);
   tft.setTextSize(2);
   tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-  tft.setCursor(right - ((6 * (int)strlen(text) - 1) * 2 - 1), STATUS_Y + 1);
+  tft.setCursor(right - (textWidth(text, 2) - 3), STATUS_Y + 1);   // как раньше (6n − 1)·2 − 1
   tft.print(text);
 }
 
@@ -192,7 +191,7 @@ void displaySetConnected(bool connected) {
 // обновлять только их: строки всегда одной длины и ложатся поверх старых.
 // Если часы не выставлены (epoch равен нулю), вместо времени прочерки.
 // Пока время не подтверждено планшетом (rtcSynced, G184), часы оранжевые, а под датой
-// надпись TIME NOT SET: в них может стоять время сборки прошивки, и выглядит оно как настоящее.
+// надпись «Время не задано»: в них может стоять время сборки прошивки, и выглядит оно как настоящее.
 void drawClockTime(long epoch) {
   char full[24];
   rtcFormat(epoch, full, sizeof(full));
@@ -204,8 +203,8 @@ void drawClockTime(long epoch) {
   }
   drawCentered(hm, 80, 6, rtcSynced ? ST77XX_CYAN : ST77XX_ORANGE);
   drawCentered(dm, 150, 3, ST77XX_WHITE);
-  tft.fillRect(0, CLOCK_NOTE_Y, TFT_SIZE, 16, ST77XX_BLACK);
-  if (!rtcSynced) drawCentered("TIME NOT SET", CLOCK_NOTE_Y, 2, ST77XX_ORANGE);
+  tft.fillRect(0, CLOCK_NOTE_Y - 4, TFT_SIZE, 20, ST77XX_BLACK);   // с полосой над строкой
+  if (!rtcSynced) drawCentered("Время не задано", CLOCK_NOTE_Y, 2, ST77XX_ORANGE);
 }
 
 // Экран покоя: время крупно, под ним дата, в строке состояния связь и батарея.
@@ -217,7 +216,7 @@ void screenClock(long epoch) {
 }
 
 // Посох взведён: что бросаем, например «3d6», и подсказка, что делать дальше.
-// С удачей под «1d20» зелёное FORTUNE, с неудачей красное MISFORTUNE (SPEC 2.5).
+// С удачей под «1d20» зелёное «Удача», с неудачей красное «Неудача» (SPEC 2.5).
 void screenArmed(int count, int sides, uint8_t flags) {
   tft.fillScreen(ST77XX_BLACK);
   statusShowTime = true;
@@ -225,11 +224,11 @@ void screenArmed(int count, int sides, uint8_t flags) {
   char buf[16];
   snprintf(buf, sizeof(buf), "%dd%d", count, sides);
   drawCentered(buf, 80, 6, ST77XX_YELLOW);
-  if (flags == ROLL_FORTUNE)    drawCentered("FORTUNE", 140, 3, ST77XX_GREEN);
-  if (flags == ROLL_MISFORTUNE) drawCentered("MISFORTUNE", 140, 3, ST77XX_RED);
+  if (flags == ROLL_FORTUNE)    drawCentered("Удача", 140, 3, ST77XX_GREEN);
+  if (flags == ROLL_MISFORTUNE) drawCentered("Неудача", 140, 3, ST77XX_RED);
   // Тестовый режим подменяет 20 и 1: видно на каждом взводе, чтобы не забыть выключить перед игрой.
-  if (displayTestMark && count == 1 && sides == 20) drawCentered("TEST", 210, 2, ST77XX_ORANGE);
-  drawCentered("HIT THE FLOOR", 180, 2, ST77XX_WHITE);
+  if (displayTestMark && count == 1 && sides == 20) drawCentered("ТЕСТ", 210, 2, ST77XX_ORANGE);
+  drawCentered("Стукни посохом!", 180, 2, ST77XX_WHITE);
 }
 
 // Встроенный шрифт: цифра 5×7 точек в клетке 6×8, шестая колонка и восьмая строка
@@ -406,13 +405,13 @@ void screenResult(const Roll& r) {
     // Оба броска удачи зелёные, неудачи красные: тем же цветом, что надпись при взводе.
     uint16_t color = r.flags == ROLL_FORTUNE ? ST77XX_GREEN
                    : r.flags == ROLL_MISFORTUNE ? ST77XX_RED : ST77XX_WHITE;
-    drawCentered(buf, BREAKDOWN_Y, strlen(buf) <= 20 ? 2 : 1, color);
+    drawCentered(buf, BREAKDOWN_Y, textLength(buf) <= 20 ? 2 : 1, color);
   }
 }
 
 // ===== История бросков (кнопки ◄ ►) =====
 
-const int HIST_HEADER_Y = 30;    // «HISTORY 1-4/20»
+const int HIST_HEADER_Y = 30;    // «История 3/20»
 const int HIST_ROW_Y    = 56;    // верх первой строки
 const int HIST_ROW_H    = 46;    // строка: бросок шрифтом 2 и под ним слагаемые шрифтом 1
 const int HIST_DICE_X   = 78;    // столбец «3d6», левее время броска
@@ -442,12 +441,10 @@ void drawHistoryRow(const HistoryRecord& rec, int y, bool selected) {
   tft.print(hm);
 
   snprintf(buf, sizeof(buf), "%dd%d", r.count, r.sides);
-  tft.setTextColor(ST77XX_CYAN, bg);
-  tft.setCursor(HIST_DICE_X, y);
-  tft.print(buf);
-  if (r.flags) {   // F — удача (FORTUNE), M — неудача (MISFORTUNE)
-    tft.setTextColor(r.flags == ROLL_FORTUNE ? ST77XX_GREEN : ST77XX_RED, bg);
-    tft.print(r.flags == ROLL_FORTUNE ? " F" : " M");
+  drawText(tft, HIST_DICE_X, y, buf, 2, ST77XX_CYAN, bg);
+  if (r.flags) {   // У — удача, Н — неудача; сразу за «1d20»
+    drawText(tft, HIST_DICE_X + textWidth(buf, 2), y, r.flags == ROLL_FORTUNE ? " У" : " Н", 2,
+             r.flags == ROLL_FORTUNE ? ST77XX_GREEN : ST77XX_RED, bg);
   }
 
   uint16_t color = ST77XX_WHITE;
@@ -455,7 +452,7 @@ void drawHistoryRow(const HistoryRecord& rec, int y, bool selected) {
   if (r.count == 1 && r.sides == 20 && r.total == 1)  color = ST77XX_RED;
   snprintf(buf, sizeof(buf), "%d", r.total);
   tft.setTextColor(color, bg);
-  tft.setCursor(TFT_SIZE - 6 - (12 * (int)strlen(buf) - 2), y);   // итог прижат вправо
+  tft.setCursor(TFT_SIZE - 6 - (textWidth(buf, 2) - 2), y);   // итог прижат вправо
   tft.print(buf);
 
   if (r.count > 1 || r.flags) {
@@ -470,9 +467,9 @@ void drawHistoryRow(const HistoryRecord& rec, int y, bool selected) {
 // Заголовок и видимые строки: с броска top, выбран бросок sel. Экран не стирает,
 // каждая строка закрашивает себя сама, поэтому годится и для каждого шага ◄ ►.
 void drawHistoryList(const HistoryRecord* recs, int count, int top, int sel) {
-  char buf[24];
-  snprintf(buf, sizeof(buf), "HISTORY %d/%d", sel + 1, count);
-  tft.fillRect(0, HIST_HEADER_Y, TFT_SIZE, 16, ST77XX_BLACK);   // «12/20» длиннее «9/20»
+  char buf[48];   // русские буквы по два байта: запас вдвое
+  snprintf(buf, sizeof(buf), "История %d/%d", sel + 1, count);
+  tft.fillRect(0, HIST_HEADER_Y - 4, TFT_SIZE, 20, ST77XX_BLACK);   // «12/20» длиннее «9/20»; с полосой над строкой
   drawCentered(buf, HIST_HEADER_Y, 2, ST77XX_CYAN);
   int last = min(top + HISTORY_PAGE, count);
   for (int i = top; i < last; i++) {
@@ -486,7 +483,7 @@ void screenHistory(const HistoryRecord* recs, int count, int top, int sel) {
   statusShowTime = true;
   drawStatusBar();
   if (count == 0) {
-    drawCentered("NO ROLLS YET", 110, 2, COLOR_GREY);
+    drawCentered("Бросков ещё нет", 110, 2, COLOR_GREY);
     return;
   }
   drawHistoryList(recs, count, top, sel);
@@ -497,4 +494,25 @@ void screenHistory(const HistoryRecord* recs, int count, int top, int sel) {
 void displayTick(long epoch, bool clockScreen) {
   if (clockScreen) drawClockTime(epoch);
   else             drawStatusTime();
+}
+
+// Проверочный экран русского шрифта (FONT_TEST в config.h): все 66 букв кеглем 2,
+// пробная строка кеглями 1 и 3, рост «Ее Ёё Ии Йй» кеглями 3, 2 и 1 и строка похожих букв,
+// чтобы сравнить их на глаз. Строки стоят с запасом 2·size сверху под точки Ё и кратку Й
+// (правило в шапке text.h). Ждать кнопку — забота главного цикла, здесь только рисунок.
+void screenFontTest() {
+  const char* probe  = "◄ Щит d20 Ё ►";   // русские, латиница, цифры и стрелки
+  const char* height = "Ее Ёё Ии Йй";      // рост заглавных со знаками рядом с обычными
+  tft.fillScreen(ST77XX_BLACK);
+  drawText(tft, 6, 6,  "АБВГДЕЁЖЗИЙКЛМНОП", 2, ST77XX_WHITE, ST77XX_BLACK);
+  drawText(tft, 6, 26, "РСТУФХЦЧШЩЪЫЬЭЮЯ",  2, ST77XX_WHITE, ST77XX_BLACK);
+  drawText(tft, 6, 46, "абвгдеёжзийклмноп", 2, ST77XX_WHITE, ST77XX_BLACK);
+  drawText(tft, 6, 66, "рстуфхцчшщъыьэюя",  2, ST77XX_WHITE, ST77XX_BLACK);
+  drawTextCentered(tft, 88,  probe,  1, ST77XX_CYAN, ST77XX_BLACK);
+  drawTextCentered(tft, 104, probe,  3, ST77XX_CYAN, ST77XX_BLACK);
+  drawTextCentered(tft, 136, height, 3, ST77XX_GREEN, ST77XX_BLACK);
+  drawTextCentered(tft, 166, height, 2, ST77XX_GREEN, ST77XX_BLACK);
+  drawTextCentered(tft, 188, height, 1, ST77XX_GREEN, ST77XX_BLACK);
+  drawTextCentered(tft, 204, "Ш Щ ш щ Ц ц Д д Ы ы Ю ю Ж ж Ф ф — 2–3", 1, ST77XX_YELLOW, ST77XX_BLACK);
+  drawTextCentered(tft, 226, "Любая кнопка — дальше", 1, COLOR_GREY, ST77XX_BLACK);
 }
