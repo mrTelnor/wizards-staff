@@ -72,6 +72,15 @@ void diceLoad() {
     else if (twice) logLine(LOG_DICE, LOG_WARN, "во флеш кость d%u дважды, беру значения по умолчанию", twice);
     else            logLine(LOG_DICE, LOG_WARN, "во флеш мусор, таблица не читается, беру значения по умолчанию");
   }
+  // Испорченную таблицу заменяем во флеш таблицей по умолчанию. Иначе предупреждение
+  // выше повторялось бы при каждом включении: до 0.18.1 так и было с таблицей, где d4 стоял
+  // дважды. Пустую не пишем: до первой команды map там и должно быть пусто.
+  if (!ok && !empty) {
+    prefs.begin("staff", false);
+    prefs.putBytes("dice", diceSides, sizeof(diceSides));
+    prefs.end();
+    logLine(LOG_DICE, LOG_INFO, "записал таблицу по умолчанию во флеш на место испорченной");
+  }
   char list[64];
   diceList(list, sizeof(list));
   logLine(LOG_DICE, LOG_INFO, "кости по кнопкам: %s", list);
