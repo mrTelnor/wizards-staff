@@ -5,7 +5,7 @@
 // В остальном коде номеров нет, только имена отсюда. Распиновка: hardware/wiring.md.
 
 // ===== Версия прошивки, уходит телефону в ответе info =====
-const char* FW_VERSION = "0.14.0";
+const char* FW_VERSION = "0.14.1";
 
 // ===== Ножки платы ESP32-C3 SuperMini =====
 const int PIN_I2C_SDA  = 0;    // шина I2C: часы и расширители кнопок
@@ -67,6 +67,7 @@ const unsigned long BATTERY_PERIOD_MS   = 10000;   // как часто мери
 // ===== Аккумулятор: границы для перевода напряжения в проценты =====
 const int BATTERY_FULL_MV  = 4200;   // 100 %
 const int BATTERY_EMPTY_MV = 3300;   // 0 %
+const int BATTERY_LOG_STEP_PCT = 5;  // заряд пишется в журнал при старте и потом, когда изменился на столько
 
 // ===== Служебные кнопки и кнопки меню: входы второго расширителя (I2C_ADDR_SERVICE) =====
 // Подключение: hardware/wiring.md, что делают: SPEC, раздел 2.5.

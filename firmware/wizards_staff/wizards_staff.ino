@@ -33,6 +33,7 @@
 const uint16_t DEFAULT_SIDES = 20;
 
 unsigned long lastBatteryAt = 0;
+int           lastLoggedPct = -1;     // заряд, записанный в журнал последним; -1 — ещё не писали
 unsigned long lastRollAt    = 0;
 unsigned long lastClockAt   = 0;
 unsigned long lastButtonAt  = 0;      // последнее нажатие кнопки: сразу после него удар не считаем
@@ -134,19 +135,10 @@ void disarmStaff(const char* who) {
 void onDiceButton(int i) {
   uint16_t sides = diceSides[i];
   lastButtonAt = millis();
-  // ВРЕМЕННО, отладка: щелчок пропадает, когда кость будит спящий экран. Тот же щелчок,
-  // что soundClick(), но с замером: что на самом деле выставлено на ножках пищалки и подсветки.
-  // Убрать, когда причина найдена.
-  if (soundEnabled) {
-    uint32_t toneHz = ledcWriteTone(PIN_BUZZER, SOUND_CLICK_HZ);
-    uint32_t bzHz   = ledcReadFreq(PIN_BUZZER);
-    uint32_t bzDuty = ledcRead(PIN_BUZZER);
-    ringWait(2);
-    ledcWrite(PIN_BUZZER, 0);
-    logLine(LOG_BUTTONS, LOG_WARN, "отладка щелчка: экран %s, tone %u Гц, пищалка %u Гц / %u, подсветка %u Гц / %u",
-            screenAsleep ? "спит" : "не спит", toneHz, bzHz, bzDuty,
-            ledcReadFreq(PIN_TFT_BLK), ledcRead(PIN_TFT_BLK));
-  }
+  // Сначала будим экран, потом щёлкаем. Наоборот щелчок пропадал: экран, проснувшийся
+  // сразу за двухмиллисекундным щелчком, глушил его (проверено 2026-10-29, причина в железе).
+  wakeScreen();
+  soundClick();
   logLine(LOG_BUTTONS, LOG_INFO, "кнопка P%d, кость d%u", i, sides);
   if (armedCount && armedSides == sides) {
     armStaff(armedCount >= MAX_DICE ? 1 : armedCount + 1, sides);
@@ -694,8 +686,14 @@ void loop() {
     int mv = batteryMillivolts();
     int pct = batteryPercent();
     logSetTime(rtcEpoch());   // заодно подтягиваем время журнала к часам, чтобы не уплывало
-    logLocal(LOG_BATTERY, LOG_INFO, "%d мВ, %d %%, BLE %s", mv, pct,
-             bleConnected ? "подключён" : "реклама");   // только в монитор: у приложения есть bat
+    // В журнал только заметная перемена: раз в 10 с одно и то же забивало монитор порта,
+    // а шаг в 1 % давал бы ту же частоту, показания дрожат на границе процентов.
+    // Только в монитор: у приложения есть bat.
+    if (lastLoggedPct < 0 || abs(pct - lastLoggedPct) >= BATTERY_LOG_STEP_PCT) {
+      lastLoggedPct = pct;
+      logLocal(LOG_BATTERY, LOG_INFO, "%d мВ, %d %%, BLE %s", mv, pct,
+               bleConnected ? "подключён" : "реклама");
+    }
     bleSendBattery(mv, pct);
     displaySetBattery(pct);
   }
