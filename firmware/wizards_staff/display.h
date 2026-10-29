@@ -31,6 +31,7 @@ const int HEADER_Y    = 34;    // «3d6» над результатом
 const int TOTAL_Y     = 66;    // полоса с суммой: в ней же крутится барабан
 const int TOTAL_H     = 96;    // её высота: цифра шрифта 10 высотой 80 и поля
 const int BREAKDOWN_Y = 192;   // слагаемые
+const int CLOCK_NOTE_Y = 196;  // на экране часов надпись TIME NOT SET под датой
 
 // Цвета, которых нет готовыми в библиотеке. Формат RGB565: 5 бит красного,
 // 6 зелёного, 5 синего.
@@ -190,6 +191,8 @@ void displaySetConnected(bool connected) {
 // Время и дату на экране покоя. Отдельно от screenClock, чтобы раз в минуту
 // обновлять только их: строки всегда одной длины и ложатся поверх старых.
 // Если часы не выставлены (epoch равен нулю), вместо времени прочерки.
+// Пока время не подтверждено планшетом (rtcSynced, G184), часы оранжевые, а под датой
+// надпись TIME NOT SET: в них может стоять время сборки прошивки, и выглядит оно как настоящее.
 void drawClockTime(long epoch) {
   char full[24];
   rtcFormat(epoch, full, sizeof(full));
@@ -199,8 +202,10 @@ void drawClockTime(long epoch) {
     snprintf(hm, sizeof(hm), "%.5s", full + 11);                // «21:45»
     snprintf(dm, sizeof(dm), "%.2s.%.2s", full + 8, full + 5);  // «22.10»
   }
-  drawCentered(hm, 80, 6, ST77XX_CYAN);
+  drawCentered(hm, 80, 6, rtcSynced ? ST77XX_CYAN : ST77XX_ORANGE);
   drawCentered(dm, 150, 3, ST77XX_WHITE);
+  tft.fillRect(0, CLOCK_NOTE_Y, TFT_SIZE, 16, ST77XX_BLACK);
+  if (!rtcSynced) drawCentered("TIME NOT SET", CLOCK_NOTE_Y, 2, ST77XX_ORANGE);
 }
 
 // Экран покоя: время крупно, под ним дата, в строке состояния связь и батарея.

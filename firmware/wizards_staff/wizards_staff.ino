@@ -555,6 +555,8 @@ void bleOnCommand(JsonDocument& cmd) {
       return;
     }
     rtcSaveSynced(true);
+    // На экране часов могла гореть пометка TIME NOT SET: перерисовываем, она пропадёт.
+    if (screenMode == SCREEN_CLOCK && !screenAsleep) showClock();
     char buf[24];
     rtcFormat(rtcEpoch(), buf, sizeof(buf));
     logSetTime(rtcEpoch());
