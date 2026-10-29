@@ -25,7 +25,7 @@ data class RollRecord(
     val sides: Int,
     val values: List<Int>,
     val total: Int,
-    /** Байт признаков из истории посоха. Пока всегда ноль, заведён под преимущество и помеху. */
+    /** Байт признаков из истории посоха: удача или неудача (FLAG_FORTUNE, FLAG_MISFORTUNE), иначе ноль. */
     val flags: Int = 0,
     /**
      * Время по часам посоха, секунды. Ноль значит, что часы не выставлены: показывать
@@ -47,20 +47,52 @@ data class RollRecord(
     /** Формула броска: 1d20, 3d6. */
     val formula: String get() = "${count}d$sides"
 
-    /** Слагаемые: «2 + 4 + 5». У одной кости слагаемых нет. */
-    val breakdown: String get() = if (values.size > 1) values.joinToString(" + ") else ""
+    /**
+     * Одна кость, брошенная дважды: удача или неудача. Узнаётся по числу значений, а не по
+     * flags: броски с удачей, пришедшие до того, как приложение научилось читать adv
+     * (с 2026-10-29), лежат в базе с нулём во flags, и их тоже нельзя показывать суммой.
+     */
+    val twoRolls: Boolean get() = count == 1 && values.size == 2
 
-    /** Критический успех считается только по натуральной двадцатке на одном d20. */
-    val critSuccess: Boolean get() = count == 1 && sides == 20 && values.firstOrNull() == 20
+    /** Слагаемые: «2 + 4 + 5», у удачи и неудачи оба броска «14, 7». У одной кости слагаемых нет. */
+    val breakdown: String get() = when {
+        twoRolls -> values.joinToString(", ")
+        values.size > 1 -> values.joinToString(" + ")
+        else -> ""
+    }
+
+    /** Какой из двух бросков удачи или неудачи пошёл в зачёт; -1, если бросок обычный. */
+    val keptIndex: Int get() = if (twoRolls) values.indexOf(total) else -1
+
+    /** Подпись режима для ленты; null у обычного броска и у старых записей, где режим неизвестен. */
+    val modeLabel: String? get() = when (flags) {
+        FLAG_FORTUNE -> "УДАЧА"
+        FLAG_MISFORTUNE -> "НЕУДАЧА"
+        else -> null
+    }
+
+    /**
+     * Критический успех считается только по натуральной двадцатке на одном d20 — по итогу,
+     * а не по первой кости: у неудачи «20, 3» в зачёт идёт тройка.
+     */
+    val critSuccess: Boolean get() = count == 1 && sides == 20 && total == 20
 
     /** Критический провал — натуральная единица там же. */
-    val critFail: Boolean get() = count == 1 && sides == 20 && values.firstOrNull() == 1
+    val critFail: Boolean get() = count == 1 && sides == 20 && total == 1
 
     /** Знает ли посох, когда это было. Если нет, лента покажет время получения планшетом. */
     val staffTimeKnown: Boolean get() = staffTime > 0
 
     /** Время, которое показываем человеку, миллисекунды. */
     val shownAt: Long get() = if (staffTimeKnown) staffTime * 1000 else receivedAt
+
+    companion object {
+        /** Удача: из двух бросков в зачёт лучший. То же число в байте flags истории посоха. */
+        const val FLAG_FORTUNE = 1
+
+        /** Неудача: в зачёт худший. */
+        const val FLAG_MISFORTUNE = 2
+    }
 }
 
 /**

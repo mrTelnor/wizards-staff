@@ -35,6 +35,7 @@ class RollRepository(context: Context) {
                 sides = event.sides,
                 values = event.values,
                 total = event.total,
+                flags = event.flags,
                 staffTime = event.staffTime,
                 receivedAt = System.currentTimeMillis(),
             )

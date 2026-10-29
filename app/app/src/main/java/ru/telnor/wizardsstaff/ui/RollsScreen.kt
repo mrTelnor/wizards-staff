@@ -56,6 +56,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -101,6 +105,36 @@ private fun formatTime(millis: Long): String = timeFormat.format(Date(millis))
  */
 private fun rollTime(roll: RollRecord): String =
     if (roll.staffTimeKnown) formatTime(roll.shownAt) else formatTime(roll.receivedAt) + "*"
+
+/**
+ * Слагаемые для карточки. У удачи и неудачи оба броска через запятую, отброшенный
+ * зачёркнут и бледнее: «~~7~~, 18». Остальные — как есть, «2 + 4 + 5».
+ * faded — цвет отброшенного: от цвета карточки, иначе на крит-карточках и в тёмной теме он чужой.
+ */
+private fun breakdownText(roll: RollRecord, faded: Color): AnnotatedString = buildAnnotatedString {
+    if (!roll.twoRolls) {
+        append(roll.breakdown)
+        return@buildAnnotatedString
+    }
+    roll.values.forEachIndexed { i, value ->
+        if (i > 0) append(", ")
+        if (i == roll.keptIndex) {
+            append(value.toString())
+        } else {
+            withStyle(SpanStyle(textDecoration = TextDecoration.LineThrough, color = faded)) {
+                append(value.toString())
+            }
+        }
+    }
+}
+
+/** Метка режима рядом с формулой: «УДАЧА» или «НЕУДАЧА». У обычного броска ничего. */
+@Composable
+private fun ModeLabel(roll: RollRecord, content: Color) {
+    val label = roll.modeLabel ?: return
+    Spacer(Modifier.width(PosohDimens.spaceS))
+    Text(label, style = MaterialTheme.typography.labelSmall, color = content.copy(alpha = 0.85f))
+}
 
 @Composable
 fun RollsScreen(
@@ -309,6 +343,7 @@ private fun LastRollCard(roll: RollRecord?, onToggleDiscarded: (String) -> Unit)
                     if (roll != null) {
                         Spacer(Modifier.width(PosohDimens.spaceS))
                         FormulaChip(roll.formula, content)
+                        ModeLabel(roll, content)
                     }
                 }
                 if (roll != null) {
@@ -344,7 +379,7 @@ private fun LastRollCard(roll: RollRecord?, onToggleDiscarded: (String) -> Unit)
                     Spacer(Modifier.height(PosohDimens.spaceM))
                     Text(
                         // Пока барабан крутится, слагаемые прячем: иначе по ним виден результат.
-                        text = if (spinning) "…" else roll.breakdown,
+                        text = if (spinning) AnnotatedString("…") else breakdownText(roll, content.copy(alpha = 0.35f)),
                         fontSize = 19.sp,
                         style = MaterialTheme.typography.bodyMedium,
                         color = content.copy(alpha = 0.7f),
@@ -819,6 +854,7 @@ private fun FeedCard(
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     FormulaChip(roll.formula, content)
+                    ModeLabel(roll, content)
                     if (label != null) {
                         Spacer(Modifier.width(PosohDimens.spaceS))
                         Text(label, style = MaterialTheme.typography.labelSmall)
@@ -834,7 +870,7 @@ private fun FeedCard(
                 }
                 if (roll.breakdown.isNotEmpty()) {
                     Text(
-                        text = roll.breakdown,
+                        text = breakdownText(roll, content.copy(alpha = 0.35f)),
                         style = MaterialTheme.typography.bodyMedium,
                         color = content.copy(alpha = 0.7f),
                         maxLines = 2,

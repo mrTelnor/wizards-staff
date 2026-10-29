@@ -1,6 +1,7 @@
 package ru.telnor.wizardsstaff.ble
 
 import org.json.JSONObject
+import ru.telnor.wizardsstaff.db.RollRecord
 
 /*
  * Протокол обмена с посохом. Одно сообщение — одна строка JSON, в конце перевод строки.
@@ -21,6 +22,12 @@ sealed interface StaffEvent {
         val values: List<Int>,
         val total: Int,
         val staffTime: Long,
+        /**
+         * Удача или неудача: RollRecord.FLAG_FORTUNE, FLAG_MISFORTUNE или 0. На проводе
+         * это поле adv (1 и -1), в базе — те же числа, что в байте flags истории посоха.
+         * У такого броска одна кость, в values оба броска, а total — выбранный, не сумма.
+         */
+        val flags: Int = 0,
     ) : StaffEvent
 
     /** Заряд: милливольты и проценты. */
@@ -98,6 +105,11 @@ fun parseStaffEvent(line: String): StaffEvent? {
                 values = values,
                 total = json.optInt("t", values.sum()),
                 staffTime = json.optLong("ts"),
+                flags = when (json.optInt("adv")) {
+                    1 -> RollRecord.FLAG_FORTUNE
+                    -1 -> RollRecord.FLAG_MISFORTUNE
+                    else -> 0
+                },
             )
         }
 
