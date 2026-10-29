@@ -1,5 +1,6 @@
 #pragma once
 #include <Arduino.h>
+#include <Preferences.h>
 #include "config.h"
 #include "lights.h"
 
@@ -18,7 +19,7 @@
 // броска, когда датчик удара всё равно не слушается (STRIKE_COOLDOWN_MS, 5 с). Ждут они через
 // ringWait, а не delay: звук итога и фанфары звучат под вспышку кольца, и она не должна замирать.
 
-bool soundEnabled = true;   // выключит кнопка «Тихо», когда до неё дойдёт очередь
+bool soundEnabled = true;   // выключает кнопка «Тихо»; помнится во флеш, см. soundLoad
 
 // Около этой частоты зуммер 12085 звучит громче всего.
 const uint32_t SOUND_TICK_HZ  = 2700;
@@ -31,6 +32,25 @@ void soundBegin() {
   digitalWrite(PIN_BUZZER, LOW);
   ledcAttach(PIN_BUZZER, SOUND_TICK_HZ, 10);
   ledcWrite(PIN_BUZZER, 0);
+}
+
+// Достаёт из флеш, включён ли звук. Выключил перед тихой игрой — посох молчит и после
+// тумблера, пока не нажмёшь «Тихо» снова. Вызывать в setup() до первого звука.
+void soundLoad() {
+  Preferences prefs;
+  prefs.begin("staff", true);
+  soundEnabled = prefs.getBool("sound", true);
+  prefs.end();
+}
+
+// Включает или выключает звук и запоминает это во флеш. Флеш пишется только
+// по нажатию «Тихо», так что износ ей не грозит.
+void soundSetEnabled(bool on) {
+  soundEnabled = on;
+  Preferences prefs;
+  prefs.begin("staff", false);
+  prefs.putBool("sound", on);
+  prefs.end();
 }
 
 // Одна нота: частота в герцах, длительность в миллисекундах. После неё ножка снова в нуле.

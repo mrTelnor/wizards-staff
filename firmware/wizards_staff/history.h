@@ -185,6 +185,20 @@ HistoryPage historyAfter(uint32_t afterId, uint16_t limit, void (*callback)(cons
   return page;
 }
 
+// Достаёт самый свежий бросок: он лежит в ячейке прямо перед свободной.
+// Нужна кнопке «Повтор»: она взводит то же, что бросали в прошлый раз, и после
+// перезапуска тоже. Возвращает false, если бросков ещё не было или файл не читается.
+bool historyLast(HistoryRecord& out) {
+  if (!historyReady || historyCount == 0) return false;
+  File f = LittleFS.open(HISTORY_PATH, FILE_READ);
+  if (!f) return false;
+  uint16_t slot = (uint16_t)((historyNextSlot + HISTORY_FLASH_SIZE - 1) % HISTORY_FLASH_SIZE);
+  f.seek(historyOffset(slot));
+  bool ok = f.read((uint8_t*)&out, sizeof(out)) == sizeof(out);
+  f.close();
+  return ok && out.id != 0;
+}
+
 // Номер последнего броска. Ноль значит, что бросков ещё не было.
 uint32_t historyLastId() {
   return historyLastIdValue;

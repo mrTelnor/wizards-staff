@@ -6,7 +6,8 @@
 // Взводят кнопки костей на посохе (задача 4) и приложение; невзведённый посох удары не считает.
 // Взвод не спадает сам. Через SLEEP_TIMEOUT_MS без действий экран засыпает, будят его кость,
 // удар по взведённому посоху и команды arm и roll с планшета.
-// Служебные кнопки и кнопки меню опрашиваются, но действий у них пока нет: только пробуждение экрана.
+// Служебные кнопки: «Сброс» снимает взвод (долгое гасит экран), «Повтор» взводит прошлый бросок,
+// «Тихо» выключает звук. Остальные служебные и кнопки меню пока только будят экран.
 #include <LittleFS.h>
 #include "config.h"
 #include "log.h"
@@ -69,11 +70,11 @@ void wakeScreen() {
   logLine(LOG_BOOT, LOG_INFO, "экран проснулся");
 }
 
-// Гасит экран: подсветку и саму матрицу.
-void sleepScreen() {
+// Гасит экран: подсветку и саму матрицу. why — почему, для журнала.
+void sleepScreen(const char* why) {
   screenAsleep = true;
   displaySleep();
-  logLine(LOG_BOOT, LOG_INFO, "экран уснул: %lu с без действий", SLEEP_TIMEOUT_MS / 1000);
+  logLine(LOG_BOOT, LOG_INFO, "экран уснул: %s", why);
 }
 
 // Отслеживание связи для журнала: пока планшета нет, строки идут только в монитор порта.
@@ -118,13 +119,34 @@ void armStaff(uint8_t n, uint16_t d) {
   sendState();
 }
 
+// Снимает взвод и возвращает экран к часам. Общая для кнопки «Сброс» и команды disarm.
+// who — кто снял, для журнала.
+void disarmStaff(const char* who) {
+  armedCount = 0;
+  logLine(LOG_CHARGE, LOG_INFO, "снят: %s", who);
+  showClock();
+  sendState();
+}
+
 // Нажата кнопка кости. Та же кость добавляет к взводу ещё одну (3d6), после MAX_DICE
 // счёт идёт по кругу с одной: перебрал - жми дальше, не нужно снимать взвод.
 // Другая кость начинает взвод заново с одной: смешивать кости в броске нельзя (ТЗ, раздел 2).
 void onDiceButton(int i) {
   uint16_t sides = diceSides[i];
   lastButtonAt = millis();
-  soundClick();
+  // ВРЕМЕННО, отладка: щелчок пропадает, когда кость будит спящий экран. Тот же щелчок,
+  // что soundClick(), но с замером: что на самом деле выставлено на ножках пищалки и подсветки.
+  // Убрать, когда причина найдена.
+  if (soundEnabled) {
+    uint32_t toneHz = ledcWriteTone(PIN_BUZZER, SOUND_CLICK_HZ);
+    uint32_t bzHz   = ledcReadFreq(PIN_BUZZER);
+    uint32_t bzDuty = ledcRead(PIN_BUZZER);
+    ringWait(2);
+    ledcWrite(PIN_BUZZER, 0);
+    logLine(LOG_BUTTONS, LOG_WARN, "отладка щелчка: экран %s, tone %u Гц, пищалка %u Гц / %u, подсветка %u Гц / %u",
+            screenAsleep ? "спит" : "не спит", toneHz, bzHz, bzDuty,
+            ledcReadFreq(PIN_TFT_BLK), ledcRead(PIN_TFT_BLK));
+  }
   logLine(LOG_BUTTONS, LOG_INFO, "кнопка P%d, кость d%u", i, sides);
   if (armedCount && armedSides == sides) {
     armStaff(armedCount >= MAX_DICE ? 1 : armedCount + 1, sides);
@@ -137,8 +159,28 @@ void onDiceButton(int i) {
 // в этот раз ничего не делает (SPEC 2.5: во сне служебные кнопки только будят).
 uint8_t svcWokeScreen = 0;
 
-// Событие служебной кнопки или кнопки меню. Пока только будит экран и пишет в журнал,
-// действия кнопок появятся следующими шагами плана.
+// «Повтор»: взводит тот же бросок, что был последним (было 2d6 — снова 2d6).
+// Берёт его из истории во флеш, поэтому работает и сразу после включения.
+void repeatLastRoll() {
+  HistoryRecord last;
+  if (!historyLast(last)) {
+    logLine(LOG_BUTTONS, LOG_INFO, "повторять нечего: бросков ещё не было");
+    return;
+  }
+  armStaff(last.count, last.sides);
+}
+
+// «Тихо»: звук вкл/выкл. Включённый звук подтверждает себя щелчком,
+// выключение подтверждает значок в строке состояния.
+void toggleSound() {
+  soundSetEnabled(!soundEnabled);
+  drawMuteIcon();
+  soundClick();
+  logLine(LOG_BUTTONS, LOG_INFO, "звук %s", soundEnabled ? "включён" : "выключен");
+}
+
+// Событие служебной кнопки или кнопки меню. Что делает каждая: SPEC, раздел 2.5.
+// Нажатие во сне только будит экран. Кнопки, до которых очередь ещё не дошла, пишут в журнал.
 void onServiceEvent(const ServiceEvent& ev) {
   uint8_t bit = 1 << ev.button;
   const char* name = SERVICE_NAMES[ev.button];
@@ -162,8 +204,23 @@ void onServiceEvent(const ServiceEvent& ev) {
   }
 
   if (svcWokeScreen & bit) return;   // это нажатие уже потрачено на пробуждение
+  bool isLong = ev.kind == SVC_LONG;
   logLine(LOG_BUTTONS, LOG_INFO, "служебная P%d (%s): %s", ev.button, name,
-          ev.kind == SVC_LONG ? "долго" : "коротко");
+          isLong ? "долго" : "коротко");
+
+  switch (ev.button) {
+    case BTN_RESET:
+      if (isLong)          sleepScreen("долгое «Сброс»");
+      else if (armedCount) disarmStaff("кнопкой «Сброс»");
+      else                 showClock();   // взвода нет: просто убрать результат с экрана
+      break;
+    case BTN_REPEAT:
+      if (!isLong) repeatLastRoll();
+      break;
+    case BTN_SILENT:
+      if (!isLong) toggleSound();
+      break;
+  }
 }
 
 // Отправляет планшету событие roll. Один вид на свежий бросок и на запись из истории:
@@ -360,10 +417,7 @@ void bleOnCommand(JsonDocument& cmd) {
   }
 
   if (strcmp(name, "disarm") == 0) {
-    armedCount = 0;
-    logLine(LOG_CHARGE, LOG_INFO, "снят по команде с планшета");
-    showClock();
-    sendState();
+    disarmStaff("командой с планшета");
     return;
   }
 
@@ -546,6 +600,7 @@ void setup() {
   historyBegin();
   diceLoad();
   authBegin();
+  soundLoad();            // до первого экрана и первого звука: значок «Тихо» и стартовый писк зависят от него
   batteryBegin();
   displayBegin();
   statusBattPct = batteryPercent();   // до первого экрана, чтобы значок не начинался с нуля
@@ -630,7 +685,7 @@ void loop() {
   // Сон: SLEEP_TIMEOUT_MS без действий в любом состоянии, и взведённый посох тоже засыпает.
   // Время свежее по той же причине, что выше: lastActivityAt могли поставить в этом проходе.
   if (!screenAsleep && millis() - lastActivityAt > SLEEP_TIMEOUT_MS) {
-    sleepScreen();
+    sleepScreen("долго без действий");
   }
 
   // Раз в 10 с: заряд в журнал и отдельным сообщением планшету для рейки.

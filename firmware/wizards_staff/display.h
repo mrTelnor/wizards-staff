@@ -128,6 +128,18 @@ void drawBleIcon() {
   tft.drawLine(cx + 5, down, cx - 5, up, c);        // косая снизу вверх
 }
 
+// Перечёркнутый динамик слева от значка связи, пока звук выключен кнопкой «Тихо»:
+// видно, почему посох молчит. Звук включён — место пустое.
+void drawMuteIcon() {
+  const int x = 110, y = STATUS_Y;
+  tft.fillRect(x, y, 21, 17, ST77XX_BLACK);
+  if (soundEnabled) return;
+  tft.fillRect(x + 1, y + 5, 4, 7, ST77XX_WHITE);                           // корпус динамика
+  tft.fillTriangle(x + 4, y + 8, x + 10, y + 2, x + 10, y + 14, ST77XX_WHITE); // раструб
+  tft.drawLine(x + 13, y + 5, x + 19, y + 11, ST77XX_RED);                 // крест
+  tft.drawLine(x + 13, y + 11, x + 19, y + 5, ST77XX_RED);
+}
+
 // Мелкое время в левом верхнем углу. На экране часов не рисуется: там оно и так крупно.
 // Строка всегда «ЧЧ:ММ» одной длины, поэтому ложится поверх старой.
 void drawStatusTime() {
@@ -146,6 +158,7 @@ void drawStatusTime() {
 // Вся строка состояния разом: при смене экрана.
 void drawStatusBar() {
   drawStatusTime();
+  drawMuteIcon();
   drawBleIcon();
   drawBattery();
 }
