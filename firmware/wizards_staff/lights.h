@@ -1,5 +1,6 @@
 #pragma once
 #include <Adafruit_NeoPixel.h>
+#include <Preferences.h>
 #include "config.h"
 
 // Кольцо WS2812B на 12 светодиодов, подсветка кристалла. Здесь только кольцо:
@@ -79,6 +80,112 @@ RingFlash     ringFlashKind = RING_FLASH_NONE;   // какая вспышка и
 unsigned long ringFlashAt   = 0;                 // когда началась
 unsigned long ringFrameAt   = 0;                 // когда рисовали последний кадр
 
+// ===== Свечение кристалла: кнопка «Свет» =====
+// Огонь, как при старте, только спокойный и своего цвета. Гаснет только кнопкой «Свет»:
+// сон экрана и взвод его не трогают (решение автора 2026-10-29). Вспышки бросков
+// идут поверх свечения, догорев, отдают кольцо ему обратно.
+// Режим и палитра помнятся во флеш.
+
+enum GlowMode { GLOW_OFF, GLOW_DIM, GLOW_BRIGHT };
+const char* const GLOW_MODE_NAMES[3] = { "выкл", "тускло", "ярко" };
+
+// Палитра: цвет остывшего огонька и цвет раскалённого. Каждый светодиод переливается
+// между ними по своему накалу. Белый взят тёплым: холодный у WS2812B синеват и тянет больше тока.
+struct GlowPalette { uint8_t cold[3], hot[3]; const char* name; };
+const GlowPalette GLOW_PALETTES[] = {
+  { { 255,   0,   0 }, { 255, 100,   0 }, "красный - оранжевый" },
+  { { 255, 220, 160 }, { 255, 190,   0 }, "белый - жёлтый" },
+  { {   0, 120,   0 }, { 100, 255,  60 }, "тёмно-зелёный - светло-зелёный" },
+  { {   0, 170, 255 }, {   0,   0, 255 }, "голубой - синий" },
+  { { 200,   0, 255 }, {  90,   0, 160 }, "фиолетовый - тёмно-фиолетовый" },
+};
+const int GLOW_PALETTE_COUNT = sizeof(GLOW_PALETTES) / sizeof(GLOW_PALETTES[0]);
+
+const unsigned long GLOW_FADE_IN_MS = 400;   // разгорается после включения, после вспышки броска и после старта
+const int           GLOW_STEP       = 5;     // накал проходит 1/5 пути к цели за кадр: огонь дышит, а не дёргается
+
+GlowMode      glowMode    = GLOW_OFF;
+uint8_t       glowPalette = 0;
+unsigned long glowSince   = 0;               // с какого мгновения разгорается
+uint8_t       glowHeat[RING_LEDS];           // накал каждого огонька, от 0 до 255
+uint8_t       glowTarget[RING_LEDS];         // к какому накалу он сейчас ползёт
+
+// Достаёт режим и палитру из флеш и раскладывает огоньки по случайному накалу.
+// Вызывать в setup() до ringStartup().
+void glowLoad() {
+  Preferences prefs;
+  prefs.begin("staff", true);
+  glowMode    = (GlowMode)prefs.getUChar("light", GLOW_OFF);
+  glowPalette = prefs.getUChar("palette", 0);
+  prefs.end();
+  if (glowMode > GLOW_BRIGHT) glowMode = GLOW_OFF;
+  if (glowPalette >= GLOW_PALETTE_COUNT) glowPalette = 0;
+  for (int i = 0; i < RING_LEDS; i++) {
+    glowHeat[i]   = random(60, 256);
+    glowTarget[i] = random(60, 256);
+  }
+}
+
+// Запоминает режим и палитру во флеш. Пишется только по нажатию «Свет».
+void glowSave() {
+  Preferences prefs;
+  prefs.begin("staff", false);
+  prefs.putUChar("light", glowMode);
+  prefs.putUChar("palette", glowPalette);
+  prefs.end();
+}
+
+// Начать разгораться с темноты: после старта, после вспышки броска, при включении.
+void glowFadeIn() {
+  glowSince = millis();
+}
+
+// Один кадр свечения. Накал каждого огонька ползёт к своей случайной цели, дошёл —
+// получает новую. От накала зависит и цвет (от остывшего к раскалённому), и яркость:
+// раскалённый огонёк в два раза ярче остывшего.
+void glowFrame(unsigned long now) {
+  float fade = (float)(now - glowSince) / GLOW_FADE_IN_MS;
+  if (fade > 1.0f) fade = 1.0f;
+  uint8_t level = glowMode == GLOW_BRIGHT ? GLOW_BRIGHT_LEVEL : GLOW_DIM_LEVEL;
+  const GlowPalette& p = GLOW_PALETTES[glowPalette];
+
+  for (int i = 0; i < RING_LEDS; i++) {
+    int h = glowHeat[i];
+    h += (glowTarget[i] - h) / GLOW_STEP;
+    if (abs(glowTarget[i] - h) < GLOW_STEP) glowTarget[i] = random(60, 256);
+    glowHeat[i] = h;
+
+    float k = h / 255.0f;
+    float bright = level / 255.0f * fade * (0.5f + 0.5f * k);
+    uint8_t c[3];
+    for (int j = 0; j < 3; j++) c[j] = (p.cold[j] + (p.hot[j] - p.cold[j]) * k) * bright;
+    ring.setPixelColor(i, ring.Color(c[0], c[1], c[2]));
+  }
+  ring.show();
+}
+
+// Кнопка «Свет», короткое нажатие: выкл → тускло → ярко → выкл.
+void glowNextMode() {
+  glowMode = (GlowMode)((glowMode + 1) % 3);
+  if (glowMode == GLOW_DIM) glowFadeIn();          // из темноты разгорается, из тускло в ярко переходит сразу
+  if (glowMode == GLOW_OFF && ringFlashKind == RING_FLASH_NONE) {
+    ring.clear();                                  // во время вспышки не гасим: она догорит и погасит сама
+    ring.show();
+  }
+  glowSave();
+}
+
+// Кнопка «Свет», долгое нажатие: следующая палитра. Если свет выключен, включается
+// тускло: иначе смену цвета не увидеть.
+void glowNextPalette() {
+  glowPalette = (glowPalette + 1) % GLOW_PALETTE_COUNT;
+  if (glowMode == GLOW_OFF) {
+    glowMode = GLOW_DIM;
+    glowFadeIn();
+  }
+  glowSave();
+}
+
 // Яркость вспышки от 0 до 1 через t мс после начала, или -1, когда вспышка кончилась.
 // На спаде квадрат: свет долго тает и только в конце гаснет, глазу так мягче.
 float ringFlashLevel(const RingFlashShape& s, unsigned long t) {
@@ -93,22 +200,29 @@ float ringFlashLevel(const RingFlashShape& s, unsigned long t) {
   return -1.0f;
 }
 
-// Рисует очередной кадр вспышки, если пора. Вызывать часто: из loop() и из ringWait().
+// Рисует очередной кадр вспышки или свечения, если пора. Вызывать часто: из loop() и из ringWait().
 // Кадры не чаще RING_FRAME_MS: чаще глаз не заметит, а шине кольца лишняя работа.
 void ringUpdate() {
-  if (ringFlashKind == RING_FLASH_NONE) return;
   unsigned long now = millis();
   if (now - ringFrameAt < RING_FRAME_MS) return;
+  if (ringFlashKind == RING_FLASH_NONE) {
+    if (glowMode != GLOW_OFF) {
+      ringFrameAt = now;
+      glowFrame(now);
+    }
+    return;
+  }
   ringFrameAt = now;
 
   const RingFlashShape& shape = ringFlashKind == RING_FLASH_CRIT ? RING_SHAPE_CRIT
                               : ringFlashKind == RING_FLASH_FAIL ? RING_SHAPE_FAIL
                               : RING_SHAPE_WHITE;
   float level = ringFlashLevel(shape, now - ringFlashAt);
-  if (level < 0) {                 // догорела: гасим кольцо и больше не рисуем
+  if (level < 0) {                 // догорела: гасим кольцо, свечение (если включено) разгорится заново
     ringFlashKind = RING_FLASH_NONE;
     ring.clear();
     ring.show();
+    glowFadeIn();
     return;
   }
 

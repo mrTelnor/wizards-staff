@@ -7,7 +7,8 @@
 // Взвод не спадает сам. Через SLEEP_TIMEOUT_MS без действий экран засыпает, будят его кость,
 // удар по взведённому посоху и команды arm и roll с планшета.
 // Служебные кнопки: «Сброс» снимает взвод (долгое гасит экран), «Повтор» взводит прошлый бросок,
-// «Тихо» выключает звук. Остальные служебные и кнопки меню пока только будят экран.
+// «Тихо» выключает звук, «Свет» переключает свечение кристалла и его палитру.
+// Остальные служебные и кнопки меню пока только будят экран.
 #include <LittleFS.h>
 #include "config.h"
 #include "log.h"
@@ -208,6 +209,12 @@ void onServiceEvent(const ServiceEvent& ev) {
       break;
     case BTN_REPEAT:
       if (!isLong) repeatLastRoll();
+      break;
+    case BTN_LIGHT:
+      if (isLong) glowNextPalette();
+      else        glowNextMode();
+      logLine(LOG_BUTTONS, LOG_INFO, "свет: %s, %s", GLOW_MODE_NAMES[glowMode],
+              GLOW_PALETTES[glowPalette].name);
       break;
     case BTN_SILENT:
       if (!isLong) toggleSound();
@@ -602,14 +609,16 @@ void setup() {
   bleBegin();
   identityBegin();   // после bleBegin: генератор случайных чисел точнее при включённом радио
   diceSelfTest();
-  ringStartup();          // огненная вспышка и угасание: посох готов, дальше кольцо не горит
+  glowLoad();             // режим и палитра «Света» из флеш
+  ringStartup();          // огненная вспышка и угасание: посох готов
+  glowFadeIn();           // дальше разгорается свечение, если «Свет» не выключен
   soundStartup();
   noteActivity();         // отсчёт до сна с конца запуска
 }
 
 void loop() {
   bleLoop();
-  ringUpdate();   // догорает вспышка кольца после броска, если она ещё идёт
+  ringUpdate();   // догорает вспышка кольца после броска или дышит свечение «Света»
   unsigned long now = millis();
 
   // Планшет появился или пропал: включаем и выключаем отправку журнала в приложение.
