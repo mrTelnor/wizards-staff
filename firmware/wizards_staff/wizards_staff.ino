@@ -170,20 +170,23 @@ void showHomeScreen() {
 
 // ===== История на экране: кнопки ◄ ► (SPEC 2.5) =====
 // Последние HISTORY_SIZE бросков из флеш, по HISTORY_PAGE на экран, свежие сверху.
+// ◄ ► двигают выделение по одной строке, список сдвигается вслед за ним тоже по одной.
 // Читаются один раз при входе. Перечитывать незачем: бросок во время просмотра
 // показывает свой экран результата, и история закрывается сама.
 HistoryRecord historyView[HISTORY_SIZE];
 int           historyViewCount = 0;
-int           historyViewPage  = 0;
+int           historyViewTop   = 0;   // какой бросок в верхней строке экрана
+int           historyViewSel   = 0;   // какой бросок выделен
 unsigned long historyViewAt    = 0;   // последнее нажатие в истории: от него считается выход по времени
 
-// ◄ вне истории: открыть её на самых свежих бросках.
+// ◄ вне истории: открыть её, выделен самый свежий бросок.
 void openHistory() {
   historyViewCount = historyLatest(historyView, HISTORY_SIZE);
-  historyViewPage  = 0;
+  historyViewTop   = 0;
+  historyViewSel   = 0;
   historyViewAt    = millis();
   screenMode       = SCREEN_HISTORY;
-  screenHistory(historyView, historyViewCount, 0);
+  screenHistory(historyView, historyViewCount, 0, 0);
   logLine(LOG_BUTTONS, LOG_INFO, "история: %d бросков", historyViewCount);
 }
 
@@ -192,16 +195,18 @@ void closeHistory() {
   showHomeScreen();
 }
 
-// Листает историю: dir +1 — к старым броскам (◄), -1 — к новым (►).
-// ► на первой странице выходит из истории, ◄ на последней ничего не делает.
+// Двигает выделение: dir +1 — к старому броску (◄), -1 — к новому (►).
+// ► на самом свежем выходит из истории, ◄ на самом старом ничего не делает.
+// Выделение ушло за край экрана — список сдвигается на одну строку за ним.
 void historyStep(int dir) {
   historyViewAt = millis();
-  int pages = (historyViewCount + HISTORY_PAGE - 1) / HISTORY_PAGE;
-  int next  = historyViewPage + dir;
+  int next = historyViewSel + dir;
   if (next < 0) { closeHistory(); return; }
-  if (next >= pages) return;
-  historyViewPage = next;
-  screenHistory(historyView, historyViewCount, historyViewPage);
+  if (next >= historyViewCount) return;
+  historyViewSel = next;
+  if (historyViewSel < historyViewTop) historyViewTop = historyViewSel;
+  if (historyViewSel >= historyViewTop + HISTORY_PAGE) historyViewTop = historyViewSel - HISTORY_PAGE + 1;
+  drawHistoryList(historyView, historyViewCount, historyViewTop, historyViewSel);
 }
 
 // Служебные кнопки, которые разбудили экран: их короткое или долгое нажатие

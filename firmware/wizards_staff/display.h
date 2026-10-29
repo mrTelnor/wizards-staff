@@ -400,10 +400,19 @@ const int HIST_HEADER_Y = 30;    // «HISTORY 1-4/20»
 const int HIST_ROW_Y    = 56;    // верх первой строки
 const int HIST_ROW_H    = 46;    // строка: бросок шрифтом 2 и под ним слагаемые шрифтом 1
 const int HIST_DICE_X   = 78;    // столбец «3d6», левее время броска
+const int HIST_BG_TOP   = 5;     // фон строки начинается чуть выше текста...
+const int HIST_BG_H     = 38;    // ...и захватывает слагаемые; между строками остаётся чёрный зазор
+
+// Фон выбранной строки: тёмно-синий (24, 32, 72). Заметен издалека, но не слепит,
+// и все цвета текста на нём читаются, включая серый.
+const uint16_t COLOR_SELECT = 0x1909;
 
 // Одна строка истории: время броска, что бросали, итог справа, под ними мелко слагаемые.
 // Цвета как на экране результата: 20 на d20 золотом, 1 красным, удача зелёным, неудача красным.
-void drawHistoryRow(const HistoryRecord& rec, int y) {
+// Строка сама закрашивает свой фон, поэтому перерисовывается поверх старой без мигания.
+void drawHistoryRow(const HistoryRecord& rec, int y, bool selected) {
+  uint16_t bg = selected ? COLOR_SELECT : ST77XX_BLACK;
+  tft.fillRect(0, y - HIST_BG_TOP, TFT_SIZE, HIST_BG_H, bg);
   Roll r = historyToRoll(rec);
   char buf[64];
 
@@ -412,16 +421,16 @@ void drawHistoryRow(const HistoryRecord& rec, int y) {
   char hm[6] = "--:--";
   if (rec.ts) snprintf(hm, sizeof(hm), "%.5s", full + 11);
   tft.setTextSize(2);
-  tft.setTextColor(COLOR_GREY, ST77XX_BLACK);
+  tft.setTextColor(COLOR_GREY, bg);
   tft.setCursor(6, y);
   tft.print(hm);
 
   snprintf(buf, sizeof(buf), "%dd%d", r.count, r.sides);
-  tft.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
+  tft.setTextColor(ST77XX_CYAN, bg);
   tft.setCursor(HIST_DICE_X, y);
   tft.print(buf);
   if (r.flags) {   // F — удача (FORTUNE), M — неудача (MISFORTUNE)
-    tft.setTextColor(r.flags == ROLL_FORTUNE ? ST77XX_GREEN : ST77XX_RED, ST77XX_BLACK);
+    tft.setTextColor(r.flags == ROLL_FORTUNE ? ST77XX_GREEN : ST77XX_RED, bg);
     tft.print(r.flags == ROLL_FORTUNE ? " F" : " M");
   }
 
@@ -429,21 +438,34 @@ void drawHistoryRow(const HistoryRecord& rec, int y) {
   if (r.count == 1 && r.sides == 20 && r.total == 20) color = ST77XX_YELLOW;
   if (r.count == 1 && r.sides == 20 && r.total == 1)  color = ST77XX_RED;
   snprintf(buf, sizeof(buf), "%d", r.total);
-  tft.setTextColor(color, ST77XX_BLACK);
+  tft.setTextColor(color, bg);
   tft.setCursor(TFT_SIZE - 6 - (12 * (int)strlen(buf) - 2), y);   // итог прижат вправо
   tft.print(buf);
 
   if (r.count > 1 || r.flags) {
     rollBreakdown(r, buf, sizeof(buf));
     tft.setTextSize(1);
-    tft.setTextColor(COLOR_GREY, ST77XX_BLACK);
+    tft.setTextColor(COLOR_GREY, bg);
     tft.setCursor(HIST_DICE_X, y + 20);
     tft.print(buf);   // длинные слагаемые (десять d1000) просто обрежутся у края
   }
 }
 
-// Страница истории: page-я четвёрка из recs, свежие сверху. count — сколько всего бросков.
-void screenHistory(const HistoryRecord* recs, int count, int page) {
+// Заголовок и видимые строки: с броска top, выбран бросок sel. Экран не стирает,
+// каждая строка закрашивает себя сама, поэтому годится и для каждого шага ◄ ►.
+void drawHistoryList(const HistoryRecord* recs, int count, int top, int sel) {
+  char buf[24];
+  snprintf(buf, sizeof(buf), "HISTORY %d/%d", sel + 1, count);
+  tft.fillRect(0, HIST_HEADER_Y, TFT_SIZE, 16, ST77XX_BLACK);   // «12/20» длиннее «9/20»
+  drawCentered(buf, HIST_HEADER_Y, 2, ST77XX_CYAN);
+  int last = min(top + HISTORY_PAGE, count);
+  for (int i = top; i < last; i++) {
+    drawHistoryRow(recs[i], HIST_ROW_Y + (i - top) * HIST_ROW_H, i == sel);
+  }
+}
+
+// Экран истории целиком, при входе в неё. Свежие броски сверху.
+void screenHistory(const HistoryRecord* recs, int count, int top, int sel) {
   tft.fillScreen(ST77XX_BLACK);
   statusShowTime = true;
   drawStatusBar();
@@ -451,12 +473,7 @@ void screenHistory(const HistoryRecord* recs, int count, int page) {
     drawCentered("NO ROLLS YET", 110, 2, COLOR_GREY);
     return;
   }
-  int first = page * HISTORY_PAGE;
-  int last  = min(first + HISTORY_PAGE, count);
-  char buf[24];
-  snprintf(buf, sizeof(buf), "HISTORY %d-%d/%d", first + 1, last, count);
-  drawCentered(buf, HIST_HEADER_Y, 2, ST77XX_CYAN);
-  for (int i = first; i < last; i++) drawHistoryRow(recs[i], HIST_ROW_Y + (i - first) * HIST_ROW_H);
+  drawHistoryList(recs, count, top, sel);
 }
 
 // Обновляет время там, где оно сейчас на экране: крупно на часах или мелко в углу.
