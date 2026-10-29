@@ -202,13 +202,16 @@ void screenClock(long epoch) {
 }
 
 // Посох взведён: что бросаем, например «3d6», и подсказка, что делать дальше.
-void screenArmed(int count, int sides) {
+// С удачей под «1d20» зелёное FORTUNE, с неудачей красное MISFORTUNE (SPEC 2.5).
+void screenArmed(int count, int sides, uint8_t flags) {
   tft.fillScreen(ST77XX_BLACK);
   statusShowTime = true;
   drawStatusBar();
   char buf[16];
   snprintf(buf, sizeof(buf), "%dd%d", count, sides);
   drawCentered(buf, 80, 6, ST77XX_YELLOW);
+  if (flags == ROLL_FORTUNE)    drawCentered("FORTUNE", 140, 3, ST77XX_GREEN);
+  if (flags == ROLL_MISFORTUNE) drawCentered("MISFORTUNE", 140, 3, ST77XX_RED);
   drawCentered("HIT THE FLOOR", 180, 2, ST77XX_WHITE);
 }
 
@@ -335,7 +338,9 @@ void screenResult(const Roll& r) {
   if (r.count == 1 && r.sides == 20 && r.total == 20) { finalColor = ST77XX_YELLOW; flash = RING_FLASH_CRIT; }
   if (r.count == 1 && r.sides == 20 && r.total == 1)  { finalColor = ST77XX_RED;    flash = RING_FLASH_FAIL; }
 
-  if (r.count > 1) drawCentered("...", BREAKDOWN_Y, 2, COLOR_GREY);
+  // Слагаемые, а у удачи и неудачи оба броска, прячутся за «...», пока крутится барабан.
+  bool breakdown = r.count > 1 || r.flags;
+  if (breakdown) drawCentered("...", BREAKDOWN_Y, 2, COLOR_GREY);
 
   // Окно рисуется в памяти: не больше 240×88 точек по 2 байта, до 42 КБ.
   // Памяти нет — просто показываем итог без барабана.
@@ -376,12 +381,15 @@ void screenResult(const Roll& r) {
     ringFlash(flash);
   }
 
-  if (r.count > 1) {
+  if (breakdown) {
     tft.fillRect(0, BREAKDOWN_Y, TFT_SIZE, 16, ST77XX_BLACK);   // убираем «...»
     rollBreakdown(r, buf, sizeof(buf));
     // Шрифт 2 вмещает 20 знаков в строку, шрифт 1 — 40. Слагаемые длиннее
     // сорока знаков (десять d1000) просто обрежутся у края.
-    drawCentered(buf, BREAKDOWN_Y, strlen(buf) <= 20 ? 2 : 1, ST77XX_WHITE);
+    // Оба броска удачи зелёные, неудачи красные: тем же цветом, что надпись при взводе.
+    uint16_t color = r.flags == ROLL_FORTUNE ? ST77XX_GREEN
+                   : r.flags == ROLL_MISFORTUNE ? ST77XX_RED : ST77XX_WHITE;
+    drawCentered(buf, BREAKDOWN_Y, strlen(buf) <= 20 ? 2 : 1, color);
   }
 }
 

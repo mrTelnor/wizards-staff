@@ -6,7 +6,8 @@
 // Взводят кнопки костей на посохе (задача 4) и приложение; невзведённый посох удары не считает.
 // Взвод не спадает сам. Через SLEEP_TIMEOUT_MS без действий экран засыпает, будят его кость,
 // удар по взведённому посоху и команды arm и roll с планшета.
-// Служебные кнопки: «Сброс» снимает взвод (долгое гасит экран), «Повтор» взводит прошлый бросок,
+// Служебные кнопки: «Сброс» снимает взвод (долгое гасит экран), «Повтор» взводит прошлый бросок
+// (долгое — 1d20 с удачей или неудачей),
 // «Тихо» выключает звук, «Свет» переключает свечение кристалла и его палитру.
 // Остальные служебные и кнопки меню пока только будят экран.
 #include <LittleFS.h>
@@ -93,6 +94,7 @@ bool          authClosed = false;   // связь уже разорвана за
 // Взвод живёт, пока его не сбросят или не бросят (решение автора 2026-10-28, раньше спадал за 5 мин).
 uint8_t       armedCount = 0;
 uint16_t      armedSides = 0;        // два байта: кости бывают до d1000, в байт такая не влезет
+uint8_t       armedFlags = 0;        // удача или неудача (ROLL_FORTUNE, ROLL_MISFORTUNE), только у одной кости
 
 // Рассказывает телефону, чего посох сейчас ждёт.
 void sendState() {
@@ -102,21 +104,25 @@ void sendState() {
   if (armedCount) {
     doc["n"] = armedCount;
     doc["d"] = armedSides;
+    if (armedFlags) doc["adv"] = armedFlags == ROLL_FORTUNE ? 1 : -1;
   }
   bleSend(doc);
 }
 
 // Взводит посох на n костей по d граней: экран, журнал, планшет. Общая для кнопок
 // и команды arm, чтобы взвод с посоха и с планшета ничем не отличался.
+// flags — удача или неудача, действует только при одной кости.
 // Будит спящий экран: взвод с кнопки и с планшета должен быть виден сразу.
-void armStaff(uint8_t n, uint16_t d) {
+void armStaff(uint8_t n, uint16_t d, uint8_t flags = 0) {
   wakeScreen();
   noteActivity();
   armedCount = n;
   armedSides = d;
+  armedFlags = n == 1 ? flags : 0;
   strikeReset();   // забываем дрожание, накопленное до взвода
-  logLine(LOG_CHARGE, LOG_INFO, "%dd%d, жду удара", n, d);
-  screenArmed(n, d);
+  logLine(LOG_CHARGE, LOG_INFO, "%dd%d%s%s, жду удара", n, d,
+          armedFlags ? ", " : "", rollModeName(armedFlags));
+  screenArmed(n, d, armedFlags);
   screenMode = SCREEN_ARMED;
   sendState();
 }
@@ -125,6 +131,7 @@ void armStaff(uint8_t n, uint16_t d) {
 // who — кто снял, для журнала.
 void disarmStaff(const char* who) {
   armedCount = 0;
+  armedFlags = 0;
   logLine(LOG_CHARGE, LOG_INFO, "снят: %s", who);
   showClock();
   sendState();
@@ -141,7 +148,9 @@ void onDiceButton(int i) {
   wakeScreen();
   soundClick();
   logLine(LOG_BUTTONS, LOG_INFO, "кнопка P%d, кость d%u", i, sides);
-  if (armedCount && armedSides == sides) {
+  // У взвода с удачей или неудачей кнопка той же кости не добавляет вторую, а снимает
+  // режим: 1d20 обычный. Иначе пришлось бы гадать, что значит «2d20 с удачей».
+  if (armedCount && armedSides == sides && !armedFlags) {
     armStaff(armedCount >= MAX_DICE ? 1 : armedCount + 1, sides);
   } else {
     armStaff(1, sides);
@@ -160,7 +169,14 @@ void repeatLastRoll() {
     logLine(LOG_BUTTONS, LOG_INFO, "повторять нечего: бросков ещё не было");
     return;
   }
-  armStaff(last.count, last.sides);
+  armStaff(last.count, last.sides);   // режим удачи не повторяется: он сбрасывается после броска
+}
+
+// Долгое «Повтор»: взвести 1d20 с удачей, следующее долгое — с неудачей, и так по кругу
+// (решение автора 2026-10-29). Обычный d20 возвращают кнопка кости и «Сброс».
+void toggleFortune() {
+  bool wasFortune = armedCount == 1 && armedSides == 20 && armedFlags == ROLL_FORTUNE;
+  armStaff(1, 20, wasFortune ? ROLL_MISFORTUNE : ROLL_FORTUNE);
 }
 
 // «Тихо»: звук вкл/выкл. Включённый звук подтверждает себя щелчком,
@@ -186,7 +202,7 @@ void onServiceEvent(const ServiceEvent& ev) {
       wakeScreen();
       // Во сне на экране могли быть только часы или взвод: результат к этому времени
       // уже сменился часами (RESULT_TIMEOUT_MS короче SLEEP_TIMEOUT_MS).
-      if (armedCount) { screenArmed(armedCount, armedSides); screenMode = SCREEN_ARMED; }
+      if (armedCount) { screenArmed(armedCount, armedSides, armedFlags); screenMode = SCREEN_ARMED; }
       else            showClock();
       logLine(LOG_BUTTONS, LOG_INFO, "служебная P%d (%s) разбудила экран", ev.button, name);
     } else {
@@ -208,7 +224,8 @@ void onServiceEvent(const ServiceEvent& ev) {
       else                 showClock();   // взвода нет: просто убрать результат с экрана
       break;
     case BTN_REPEAT:
-      if (!isLong) repeatLastRoll();
+      if (isLong) toggleFortune();
+      else        repeatLastRoll();
       break;
     case BTN_LIGHT:
       if (isLong) glowNextPalette();
@@ -231,11 +248,14 @@ void sendRollEvent(uint32_t id, uint32_t ts, uint8_t count, uint16_t sides,
   doc["id"] = id;
   doc["n"]  = count;
   doc["d"]  = sides;
+  // У удачи и неудачи n = 1, в v оба броска, в t выбранный, а не сумма v:
+  // приложение смотрит на adv, а не считает сумму само (docs/ПЛАН-APP.md, задача D4).
   JsonArray v = doc["v"].to<JsonArray>();
-  for (int i = 0; i < count && i < MAX_DICE; i++) v.add(values[i]);
+  int nv = rollValueCount(count, flags);
+  for (int i = 0; i < nv && i < MAX_DICE; i++) v.add(values[i]);
   doc["t"]  = total;
   doc["ts"] = ts;
-  if (flags) doc["f"] = flags;   // пока всегда ноль, поле появится вместе с задачей D4
+  if (flags) doc["adv"] = flags == ROLL_FORTUNE ? 1 : -1;
   bleSend(doc);
 }
 
@@ -251,29 +271,32 @@ uint32_t testD20Rolls = 0;   // сколько бросков 1d20 было с �
 void applyTestD20(Roll& r) {
   if (!TEST_D20_CYCLE || r.count != 1 || r.sides != 20) return;
   int step = testD20Rolls++ % 4;
-  if (step == 1) r.values[0] = 20;
-  if (step == 3) r.values[0] = 1;
-  r.total = r.values[0];
-  if (step == 1 || step == 3) {
-    logLine(LOG_ROLL, LOG_WARN, "тестовый режим: d20 подменён на %d", r.total);
-  }
+  if (step != 1 && step != 3) return;   // случайные броски не трогаем
+  uint16_t forced = step == 1 ? 20 : 1;
+  r.values[0] = forced;
+  // У удачи и неудачи подменяем оба броска, иначе вторая кость могла бы оказаться
+  // лучше или хуже подменённой, и выбор перестал бы сходиться.
+  if (r.flags) r.values[1] = forced;
+  r.total = forced;
+  logLine(LOG_ROLL, LOG_WARN, "тестовый режим: d20 подменён на %d", r.total);
 }
 
 // Делает бросок, печатает его и отправляет на планшет. Будит спящий экран:
 // удар по взведённому посоху во сне сразу показывает результат.
-void doRoll(uint8_t count, uint16_t sides) {
+void doRoll(uint8_t count, uint16_t sides, uint8_t flags = 0) {
   wakeScreen();
-  Roll r = rollDice(count, sides);
+  Roll r = rollDice(count, sides, flags);
   applyTestD20(r);
   uint32_t id = historyNextId();        // номер сквозной, во флеш, не начинается заново
   uint32_t ts = rtcEpoch();             // ноль, если часов нет: планшет подставит своё время
-  if (!historyPush(r, id, ts, 0)) logLine(LOG_HISTORY, LOG_ERROR, "бросок не записан во флеш");
+  if (!historyPush(r, id, ts)) logLine(LOG_HISTORY, LOG_ERROR, "бросок не записан во флеш");
 
   char buf[80];
   rollBreakdown(r, buf, sizeof(buf));
-  logLine(LOG_ROLL, LOG_INFO, "#%u: %dd%d = %d (%s)", id, r.count, r.sides, r.total, buf);
+  logLine(LOG_ROLL, LOG_INFO, "#%u: %dd%d%s%s = %d (%s)", id, r.count, r.sides,
+          r.flags ? ", " : "", rollModeName(r.flags), r.total, buf);
 
-  sendRollEvent(id, ts, r.count, r.sides, r.values, r.total, 0);
+  sendRollEvent(id, ts, r.count, r.sides, r.values, r.total, r.flags);
 
   screenMode = SCREEN_RESULT;
   screenResult(r);   // с анимацией барабана и тиками, около секунды; бросок планшету уже ушёл
@@ -284,6 +307,23 @@ void doRoll(uint8_t count, uint16_t sides) {
   lastRollAt = millis();
   noteActivity();  // отсчёт до часов и до сна идёт от момента, когда результат встал на экран
   strikeReset();   // сбрасываем датчик, чтобы дрожание от этого же удара не пошло вторым броском
+}
+
+// Поле adv в командах arm и roll: 1 удача, -1 неудача, 0 или нет поля — обычный бросок.
+// Удача бывает только у одной кости. Неверное значение получает отказ, а не молча
+// превращается в обычный бросок. Возвращает false, если отказ уже отправлен.
+bool parseAdv(JsonDocument& cmd, int n, uint8_t& flags) {
+  int adv = cmd["adv"] | 0;
+  flags = adv == 1 ? ROLL_FORTUNE : adv == -1 ? ROLL_MISFORTUNE : 0;
+  if (adv != 0 && !flags) {
+    bleSendError("bad adv", "adv бывает 1 (удача), -1 (неудача) или 0");
+    return false;
+  }
+  if (flags && n != 1) {
+    bleSendError("bad adv", "удача и неудача бывают только у одной кости");
+    return false;
+  }
+  return true;
 }
 
 // Разбирает команду от телефона. Команды по протоколу из docs/ПЛАН-APP.md.
@@ -411,7 +451,9 @@ void bleOnCommand(JsonDocument& cmd) {
       bleSendError("bad arm", why);
       return;
     }
-    armStaff(n, d);
+    uint8_t flags;
+    if (!parseAdv(cmd, n, flags)) return;
+    armStaff(n, d, flags);
     return;
   }
 
@@ -454,7 +496,9 @@ void bleOnCommand(JsonDocument& cmd) {
       bleSendError("bad roll", why);
       return;
     }
-    doRoll(n, d);
+    uint8_t flags;
+    if (!parseAdv(cmd, n, flags)) return;
+    doRoll(n, d, flags);
     return;
   }
 
@@ -664,8 +708,9 @@ void loop() {
   } else if (strike && now - lastRollAt > STRIKE_COOLDOWN_MS) {
     if (armedCount) {
       logLine(LOG_STRIKE, LOG_INFO, "удар засчитан, бросаю");
-      doRoll(armedCount, armedSides);
+      doRoll(armedCount, armedSides, armedFlags);
       armedCount = 0;      // бросок сделан, для следующего нужен новый взвод
+      armedFlags = 0;      // удача и неудача тоже: режим не должен остаться включённым случайно
       sendState();
     } else {
       logLine(LOG_STRIKE, LOG_INFO, "удар не засчитан, посох не взведён");

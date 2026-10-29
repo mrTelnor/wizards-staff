@@ -31,8 +31,9 @@ struct HistoryHeader {
 };
 
 // Одна запись, ровно 36 байт. Значения и грани по два байта ради костей до d1000.
-// Байт flags пока не используется: он заведён заранее под преимущество и помеху,
-// потому что менять формат потом дороже, чем зарезервировать байт сразу.
+// Байт flags — удача и неудача (ROLL_FORTUNE, ROLL_MISFORTUNE в dice.h, с 0.16.0).
+// Он был заведён заранее, поэтому формат записи не поменялся: старые записи читаются
+// с нулём, то есть как обычные броски. У удачи и неудачи count 1, а в values два числа.
 // id == 0 означает пустую ячейку: настоящие номера начинаются с единицы.
 struct HistoryRecord {
   uint32_t id;
@@ -130,7 +131,7 @@ uint32_t historyNextId() {
 }
 
 // Записывает бросок в свободную ячейку. Когда ячейки кончились, пишем поверх самой старой.
-bool historyPush(const Roll& roll, uint32_t id, uint32_t ts, uint8_t flags) {
+bool historyPush(const Roll& roll, uint32_t id, uint32_t ts) {
   if (!historyReady) return false;
   HistoryRecord r = {};
   r.id    = id;
@@ -138,8 +139,9 @@ bool historyPush(const Roll& roll, uint32_t id, uint32_t ts, uint8_t flags) {
   r.total = (uint16_t)roll.total;
   r.sides = roll.sides;
   r.count = roll.count;
-  r.flags = flags;
-  for (int i = 0; i < roll.count && i < MAX_DICE; i++) r.values[i] = roll.values[i];
+  r.flags = roll.flags;
+  int n = rollValueCount(roll.count, roll.flags);
+  for (int i = 0; i < n && i < MAX_DICE; i++) r.values[i] = roll.values[i];
 
   File f = LittleFS.open(HISTORY_PATH, "r+");
   if (!f) return false;

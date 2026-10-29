@@ -89,18 +89,42 @@ void diceSave() {
 // Грани и значения по два байта, а не по одному: протокол разрешает кости до d1000
 // (в ТЗ, раздел 7а, это «например d3 или d1000»), а в байт влезает только 255.
 // До 2026-09-18 поля были однобайтовыми, и запрос d1000 молча превращался в d232.
+// Удача и неудача (SPEC 2.5): одна кость бросается дважды, в зачёт идёт лучшая или худшая.
+// Эти же числа лежат в байте flags записи истории, на планшет уходят полем adv: 1 и -1.
+const uint8_t ROLL_FORTUNE    = 1;
+const uint8_t ROLL_MISFORTUNE = 2;
+
+// flags — ROLL_FORTUNE, ROLL_MISFORTUNE или 0. У удачи и неудачи count остаётся 1:
+// кость одна, просто брошена дважды. Оба броска лежат в values[0] и values[1],
+// а total — выбранный из них, а не их сумма.
 struct Roll {
   uint8_t  count;
   uint16_t sides;
   uint16_t values[MAX_DICE];
   int      total;
+  uint8_t  flags;
 };
 
+// Сколько чисел лежит в values: у удачи и неудачи их два при одной кости.
+int rollValueCount(uint8_t count, uint8_t flags) {
+  return flags ? 2 : count;
+}
+
 // Бросает count костей по sides граней. count ограничен MAX_DICE.
-Roll rollDice(uint8_t count, uint16_t sides) {
+// Удача и неудача бывают только у одной кости, для нескольких flags не действует.
+Roll rollDice(uint8_t count, uint16_t sides, uint8_t flags = 0) {
   Roll r;
   r.count = count > MAX_DICE ? MAX_DICE : count;
   r.sides = sides;
+  r.flags = r.count == 1 ? flags : 0;
+  if (r.flags) {
+    r.values[0] = random(1, sides + 1);
+    r.values[1] = random(1, sides + 1);
+    bool firstWins = r.flags == ROLL_FORTUNE ? r.values[0] >= r.values[1]
+                                             : r.values[0] <= r.values[1];
+    r.total = firstWins ? r.values[0] : r.values[1];
+    return r;
+  }
   r.total = 0;
   for (int i = 0; i < r.count; i++) {
     r.values[i] = random(1, sides + 1);   // от 1 до sides включительно
@@ -109,8 +133,18 @@ Roll rollDice(uint8_t count, uint16_t sides) {
   return r;
 }
 
+// Имя режима для журнала: «удача», «неудача» или пустая строка у обычного броска.
+const char* rollModeName(uint8_t flags) {
+  return flags == ROLL_FORTUNE ? "удача" : flags == ROLL_MISFORTUNE ? "неудача" : "";
+}
+
 // Собирает строку вида "2+1+4" из значений броска, для Serial и экрана.
+// У удачи и неудачи оба броска через запятую, «14, 7»: так их не спутать со слагаемыми.
 void rollBreakdown(const Roll& r, char* out, size_t len) {
+  if (r.flags) {
+    snprintf(out, len, "%u, %u", r.values[0], r.values[1]);
+    return;
+  }
   out[0] = 0;
   for (int i = 0; i < r.count; i++) {
     char part[8];
