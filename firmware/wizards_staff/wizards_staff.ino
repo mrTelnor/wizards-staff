@@ -9,7 +9,7 @@
 // Служебные кнопки: «Сброс» снимает взвод (долгое гасит экран), «Повтор» взводит прошлый бросок
 // (долгое — 1d20 с удачей или неудачей),
 // «Тихо» выключает звук, «Свет» переключает свечение кристалла и его палитру.
-// Остальные служебные и кнопки меню пока только будят экран.
+// ◄ ► листают последние броски, «Отмена» выходит из истории. ОК (меню) пока только будит экран.
 #include <LittleFS.h>
 #include "config.h"
 #include "log.h"
@@ -42,7 +42,7 @@ unsigned long lastButtonAt  = 0;      // последнее нажатие кн�
 
 // Что сейчас на экране. Часы перерисовываются раз в минуту только в режиме покоя:
 // результат броска должен стоять, пока посох не взведут заново.
-enum ScreenMode { SCREEN_CLOCK, SCREEN_ARMED, SCREEN_RESULT };
+enum ScreenMode { SCREEN_CLOCK, SCREEN_ARMED, SCREEN_RESULT, SCREEN_HISTORY };
 ScreenMode    screenMode    = SCREEN_CLOCK;
 long          clockMinute   = -1;     // минута, которая сейчас нарисована на экране
 
@@ -157,6 +157,53 @@ void onDiceButton(int i) {
   }
 }
 
+// Экран, к которому посох возвращается из истории и после сна: взвод, если посох
+// взведён, иначе часы. Результат прошлого броска сюда не входит: он есть в истории.
+void showHomeScreen() {
+  if (armedCount) {
+    screenArmed(armedCount, armedSides, armedFlags);
+    screenMode = SCREEN_ARMED;
+  } else {
+    showClock();
+  }
+}
+
+// ===== История на экране: кнопки ◄ ► (SPEC 2.5) =====
+// Последние HISTORY_SIZE бросков из флеш, по HISTORY_PAGE на экран, свежие сверху.
+// Читаются один раз при входе. Перечитывать незачем: бросок во время просмотра
+// показывает свой экран результата, и история закрывается сама.
+HistoryRecord historyView[HISTORY_SIZE];
+int           historyViewCount = 0;
+int           historyViewPage  = 0;
+unsigned long historyViewAt    = 0;   // последнее нажатие в истории: от него считается выход по времени
+
+// ◄ вне истории: открыть её на самых свежих бросках.
+void openHistory() {
+  historyViewCount = historyLatest(historyView, HISTORY_SIZE);
+  historyViewPage  = 0;
+  historyViewAt    = millis();
+  screenMode       = SCREEN_HISTORY;
+  screenHistory(historyView, historyViewCount, 0);
+  logLine(LOG_BUTTONS, LOG_INFO, "история: %d бросков", historyViewCount);
+}
+
+// Выйти из истории туда, где был: на взвод или к часам. Взвод при этом не снимается.
+void closeHistory() {
+  showHomeScreen();
+}
+
+// Листает историю: dir +1 — к старым броскам (◄), -1 — к новым (►).
+// ► на первой странице выходит из истории, ◄ на последней ничего не делает.
+void historyStep(int dir) {
+  historyViewAt = millis();
+  int pages = (historyViewCount + HISTORY_PAGE - 1) / HISTORY_PAGE;
+  int next  = historyViewPage + dir;
+  if (next < 0) { closeHistory(); return; }
+  if (next >= pages) return;
+  historyViewPage = next;
+  screenHistory(historyView, historyViewCount, historyViewPage);
+}
+
 // Служебные кнопки, которые разбудили экран: их короткое или долгое нажатие
 // в этот раз ничего не делает (SPEC 2.5: во сне служебные кнопки только будят).
 uint8_t svcWokeScreen = 0;
@@ -202,8 +249,7 @@ void onServiceEvent(const ServiceEvent& ev) {
       wakeScreen();
       // Во сне на экране могли быть только часы или взвод: результат к этому времени
       // уже сменился часами (RESULT_TIMEOUT_MS короче SLEEP_TIMEOUT_MS).
-      if (armedCount) { screenArmed(armedCount, armedSides, armedFlags); screenMode = SCREEN_ARMED; }
-      else            showClock();
+      showHomeScreen();
       logLine(LOG_BUTTONS, LOG_INFO, "служебная P%d (%s) разбудила экран", ev.button, name);
     } else {
       svcWokeScreen &= ~bit;
@@ -220,6 +266,7 @@ void onServiceEvent(const ServiceEvent& ev) {
   switch (ev.button) {
     case BTN_RESET:
       if (isLong)          sleepScreen("долгое «Сброс»");
+      else if (screenMode == SCREEN_HISTORY) closeHistory();   // в истории «Сброс» только выходит, взвод не снимает
       else if (armedCount) disarmStaff("кнопкой «Сброс»");
       else                 showClock();   // взвода нет: просто убрать результат с экрана
       break;
@@ -235,6 +282,17 @@ void onServiceEvent(const ServiceEvent& ev) {
       break;
     case BTN_SILENT:
       if (!isLong) toggleSound();
+      break;
+    case BTN_PREV:
+      if (isLong) break;
+      if (screenMode == SCREEN_HISTORY) historyStep(+1);
+      else                              openHistory();
+      break;
+    case BTN_NEXT:
+      if (!isLong && screenMode == SCREEN_HISTORY) historyStep(-1);
+      break;
+    case BTN_CANCEL:
+      if (!isLong && screenMode == SCREEN_HISTORY) closeHistory();
       break;
   }
 }
@@ -726,6 +784,11 @@ void loop() {
   // ноль в огромное число — результат тут же сменился бы часами.
   if (screenMode == SCREEN_RESULT && millis() - lastRollAt > RESULT_TIMEOUT_MS) {
     showClock();
+  }
+
+  // История без нажатий SETTINGS_TIMEOUT_MS закрывается сама. Время свежее, как выше.
+  if (screenMode == SCREEN_HISTORY && millis() - historyViewAt > SETTINGS_TIMEOUT_MS) {
+    closeHistory();
   }
 
   // Сон: SLEEP_TIMEOUT_MS без действий в любом состоянии, и взведённый посох тоже засыпает.

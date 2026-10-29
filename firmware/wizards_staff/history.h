@@ -201,6 +201,34 @@ bool historyLast(HistoryRecord& out) {
   return ok && out.id != 0;
 }
 
+// Складывает в out до max самых свежих бросков, свежий первым. Нужна экрану истории
+// на посохе: он листает последние HISTORY_SIZE бросков. Возвращает, сколько положила.
+uint16_t historyLatest(HistoryRecord* out, uint16_t max) {
+  if (!historyReady || historyCount == 0) return 0;
+  File f = LittleFS.open(HISTORY_PATH, FILE_READ);
+  if (!f) return 0;
+  uint16_t n = 0;
+  for (uint16_t k = 1; k <= historyCount && n < max; k++) {
+    uint16_t slot = (uint16_t)((historyNextSlot + HISTORY_FLASH_SIZE - k) % HISTORY_FLASH_SIZE);
+    f.seek(historyOffset(slot));
+    if (f.read((uint8_t*)&out[n], sizeof(HistoryRecord)) != sizeof(HistoryRecord)) break;
+    if (out[n].id != 0) n++;
+  }
+  f.close();
+  return n;
+}
+
+// Бросок из записи истории в том виде, в каком его понимают экран и rollBreakdown.
+Roll historyToRoll(const HistoryRecord& rec) {
+  Roll r = {};
+  r.count = rec.count;
+  r.sides = rec.sides;
+  r.total = rec.total;
+  r.flags = rec.flags;
+  for (int i = 0; i < MAX_DICE; i++) r.values[i] = rec.values[i];
+  return r;
+}
+
 // Номер последнего броска. Ноль значит, что бросков ещё не было.
 uint32_t historyLastId() {
   return historyLastIdValue;

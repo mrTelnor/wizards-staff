@@ -5,7 +5,7 @@
 // В остальном коде номеров нет, только имена отсюда. Распиновка: hardware/wiring.md.
 
 // ===== Версия прошивки, уходит телефону в ответе info =====
-const char* FW_VERSION = "0.16.0";
+const char* FW_VERSION = "0.17.0";
 
 // ===== Ножки платы ESP32-C3 SuperMini =====
 const int PIN_I2C_SDA  = 0;    // шина I2C: часы и расширители кнопок
@@ -44,7 +44,8 @@ const uint8_t RING_BRIGHTNESS_MAX = 100;
 const uint8_t GLOW_DIM_LEVEL    = 40;
 const uint8_t GLOW_BRIGHT_LEVEL = 160;
 const int MAX_DICE    = 10;   // максимум костей в одном броске
-const int HISTORY_SIZE = 5;    // сколько последних бросков показывает сам посох по кнопке «Сброс»
+const int HISTORY_SIZE = 20;   // сколько последних бросков листается на посохе кнопками ◄ ► (решение автора 2026-10-29, было 5)
+const int HISTORY_PAGE = 4;    // бросков на одном экране истории
 
 // Отдельная история во флеш: её догружает приложение, когда подключается после перерыва.
 // Это другая сущность, чем HISTORY_SIZE выше, и в ответе info телефону уходит именно она.
@@ -66,7 +67,7 @@ const unsigned long STRIKE_COOLDOWN_MS  = 5000;    // после броска д
 const unsigned long STRIKE_WINDOW_MS    = 100;     // окно, в котором считаем переключения датчика
 const int           STRIKE_MIN_EDGES    = 10;       // от скольких переключений в окне пачка считается ударом
 const unsigned long ROLL_ANIM_MS        = 1100;    // длительность барабана на экране: как в приложении (решение автора 2026-10-22, было 1500)
-const unsigned long SETTINGS_TIMEOUT_MS = 20000;   // выход из настроек и истории без нажатий
+const unsigned long SETTINGS_TIMEOUT_MS = 90000;   // выход из меню и истории без нажатий (1,5 мин, SPEC 2.5, решение автора 2026-10-28, было 20 с)
 const unsigned long BATTERY_PERIOD_MS   = 10000;   // как часто мерить заряд
 
 // ===== Аккумулятор: границы для перевода напряжения в проценты =====

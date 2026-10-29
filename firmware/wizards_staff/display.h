@@ -4,6 +4,7 @@
 #include <Adafruit_ST7789.h>
 #include "config.h"
 #include "dice.h"
+#include "history.h"
 #include "rtc.h"
 #include "log.h"
 #include "sound.h"
@@ -391,6 +392,71 @@ void screenResult(const Roll& r) {
                    : r.flags == ROLL_MISFORTUNE ? ST77XX_RED : ST77XX_WHITE;
     drawCentered(buf, BREAKDOWN_Y, strlen(buf) <= 20 ? 2 : 1, color);
   }
+}
+
+// ===== История бросков (кнопки ◄ ►) =====
+
+const int HIST_HEADER_Y = 30;    // «HISTORY 1-4/20»
+const int HIST_ROW_Y    = 56;    // верх первой строки
+const int HIST_ROW_H    = 46;    // строка: бросок шрифтом 2 и под ним слагаемые шрифтом 1
+const int HIST_DICE_X   = 78;    // столбец «3d6», левее время броска
+
+// Одна строка истории: время броска, что бросали, итог справа, под ними мелко слагаемые.
+// Цвета как на экране результата: 20 на d20 золотом, 1 красным, удача зелёным, неудача красным.
+void drawHistoryRow(const HistoryRecord& rec, int y) {
+  Roll r = historyToRoll(rec);
+  char buf[64];
+
+  char full[24];
+  rtcFormat(rec.ts, full, sizeof(full));
+  char hm[6] = "--:--";
+  if (rec.ts) snprintf(hm, sizeof(hm), "%.5s", full + 11);
+  tft.setTextSize(2);
+  tft.setTextColor(COLOR_GREY, ST77XX_BLACK);
+  tft.setCursor(6, y);
+  tft.print(hm);
+
+  snprintf(buf, sizeof(buf), "%dd%d", r.count, r.sides);
+  tft.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
+  tft.setCursor(HIST_DICE_X, y);
+  tft.print(buf);
+  if (r.flags) {   // F — удача (FORTUNE), M — неудача (MISFORTUNE)
+    tft.setTextColor(r.flags == ROLL_FORTUNE ? ST77XX_GREEN : ST77XX_RED, ST77XX_BLACK);
+    tft.print(r.flags == ROLL_FORTUNE ? " F" : " M");
+  }
+
+  uint16_t color = ST77XX_WHITE;
+  if (r.count == 1 && r.sides == 20 && r.total == 20) color = ST77XX_YELLOW;
+  if (r.count == 1 && r.sides == 20 && r.total == 1)  color = ST77XX_RED;
+  snprintf(buf, sizeof(buf), "%d", r.total);
+  tft.setTextColor(color, ST77XX_BLACK);
+  tft.setCursor(TFT_SIZE - 6 - (12 * (int)strlen(buf) - 2), y);   // итог прижат вправо
+  tft.print(buf);
+
+  if (r.count > 1 || r.flags) {
+    rollBreakdown(r, buf, sizeof(buf));
+    tft.setTextSize(1);
+    tft.setTextColor(COLOR_GREY, ST77XX_BLACK);
+    tft.setCursor(HIST_DICE_X, y + 20);
+    tft.print(buf);   // длинные слагаемые (десять d1000) просто обрежутся у края
+  }
+}
+
+// Страница истории: page-я четвёрка из recs, свежие сверху. count — сколько всего бросков.
+void screenHistory(const HistoryRecord* recs, int count, int page) {
+  tft.fillScreen(ST77XX_BLACK);
+  statusShowTime = true;
+  drawStatusBar();
+  if (count == 0) {
+    drawCentered("NO ROLLS YET", 110, 2, COLOR_GREY);
+    return;
+  }
+  int first = page * HISTORY_PAGE;
+  int last  = min(first + HISTORY_PAGE, count);
+  char buf[24];
+  snprintf(buf, sizeof(buf), "HISTORY %d-%d/%d", first + 1, last, count);
+  drawCentered(buf, HIST_HEADER_Y, 2, ST77XX_CYAN);
+  for (int i = first; i < last; i++) drawHistoryRow(recs[i], HIST_ROW_Y + (i - first) * HIST_ROW_H);
 }
 
 // Обновляет время там, где оно сейчас на экране: крупно на часах или мелко в углу.
