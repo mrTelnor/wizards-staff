@@ -1,5 +1,6 @@
 #pragma once
 #include <Wire.h>
+#include <Preferences.h>
 #include "config.h"
 #include "log.h"
 
@@ -16,6 +17,20 @@
 
 bool rtcPresent = false;   // часы отозвались на шине
 bool rtcValid   = false;   // время в часах осмысленное, а не мусор после потери питания
+// Время пришло с планшета и с тех пор часы питания не теряли. Если нет — в часах может
+// стоять время сборки прошивки, и оно неотличимо от настоящего (G184). Хранится во флеш.
+bool rtcSynced  = false;
+
+// Запоминает во флеш, подтверждено ли время планшетом. Планшет шлёт время при каждом
+// подключении, поэтому пишем только перемену, а не каждый раз.
+void rtcSaveSynced(bool synced) {
+  if (rtcSynced == synced) return;
+  rtcSynced = synced;
+  Preferences prefs;
+  prefs.begin("staff", false);
+  prefs.putBool("timeok", synced);
+  prefs.end();
+}
 
 // ---- мелкие переводчики ----
 
@@ -183,9 +198,15 @@ void rtcBegin() {
   bool powerLost = status & 0x80;
   rtcValid = !powerLost;
 
+  Preferences prefs;
+  prefs.begin("staff", true);
+  rtcSynced = prefs.getBool("timeok", false);
+  prefs.end();
+
   if (powerLost) {
     logLine(LOG_TIME, LOG_WARN, "питание терялось, время неизвестно, ставлю время сборки прошивки");
     rtcSetEpoch(rtcBuildEpoch());
+    rtcSaveSynced(false);   // время сборки — не настоящее, пока планшет не пришлёт своё
   }
 
   logSetTime(rtcEpoch());   // с этого места у журнала есть настоящее время

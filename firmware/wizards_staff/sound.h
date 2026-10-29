@@ -53,10 +53,23 @@ void soundSetEnabled(bool on) {
   prefs.end();
 }
 
+// Громкость из меню, % от громкого (VOLUME_LEVELS в config.h). Ставит её settingsApply().
+uint8_t soundVolumePct = 100;
+
+// Громкость в переливах: заполнение ШИМ от 0 (тишина) до 511 (половина периода, громче всего).
+// У электромагнитного зуммера разница не так велика, как у динамика, но затихание слышно.
+const uint32_t SOUND_VOL_MAX = 511;
+
+// Заполнение ШИМ с учётом громкости из меню: vol от 0 до SOUND_VOL_MAX.
+uint32_t soundDuty(uint32_t vol) {
+  return vol * soundVolumePct / 100;
+}
+
 // Одна нота: частота в герцах, длительность в миллисекундах. После неё ножка снова в нуле.
 void soundNote(uint32_t hz, unsigned long ms) {
   if (!soundEnabled) return;
-  ledcWriteTone(PIN_BUZZER, hz);   // заполнение 50 %: громче всего
+  ledcWriteTone(PIN_BUZZER, hz);                  // ставит частоту и заполнение 50 %...
+  ledcWrite(PIN_BUZZER, soundDuty(SOUND_VOL_MAX)); // ...а громкость задаём по меню
   ringWait(ms);
   ledcWrite(PIN_BUZZER, 0);
 }
@@ -69,10 +82,6 @@ void soundRest(unsigned long ms) {
 // Шаг, с которым меняются частота и громкость в переливах ниже.
 const unsigned long SOUND_STEP_MS = 3;
 
-// Громкость в переливах: заполнение ШИМ от 0 (тишина) до 511 (половина периода, громче всего).
-// У электромагнитного зуммера разница не так велика, как у динамика, но затихание слышно.
-const uint32_t SOUND_VOL_MAX = 511;
-
 // Плавно ведёт звук от одной частоты и громкости к другой за ms миллисекунд.
 // jitter — случайный разброс частоты в процентах на каждом шаге: при 20–30 % тон
 // рассыпается в шипение, так звучит взмах клинка.
@@ -83,8 +92,8 @@ void soundSweep(uint32_t fromHz, uint32_t toHz, unsigned long ms,
     long hz  = fromHz  + ((long)toHz  - (long)fromHz)  * (long)t / (long)ms;
     long vol = fromVol + ((long)toVol - (long)fromVol) * (long)t / (long)ms;
     if (jitter) hz = hz * random(100 - jitter, 101 + jitter) / 100;
-    ledcWriteTone(PIN_BUZZER, hz);   // ставит частоту и заполнение 50 %...
-    ledcWrite(PIN_BUZZER, vol);      // ...а громкость задаём сами
+    ledcWriteTone(PIN_BUZZER, hz);           // ставит частоту и заполнение 50 %...
+    ledcWrite(PIN_BUZZER, soundDuty(vol));   // ...а громкость задаём сами, с поправкой на меню
     ringWait(SOUND_STEP_MS);
   }
   ledcWrite(PIN_BUZZER, 0);
@@ -100,7 +109,7 @@ void soundVibrato(uint32_t hz, uint32_t depth, float rate, unsigned long ms,
     long f   = hz + depth * sinf(2 * PI * rate * t / 1000.0f);
     long vol = fromVol + ((long)toVol - (long)fromVol) * (long)t / (long)ms;
     ledcWriteTone(PIN_BUZZER, f);
-    ledcWrite(PIN_BUZZER, vol);
+    ledcWrite(PIN_BUZZER, soundDuty(vol));
     ringWait(SOUND_STEP_MS);
   }
   ledcWrite(PIN_BUZZER, 0);

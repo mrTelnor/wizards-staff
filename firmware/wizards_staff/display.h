@@ -47,6 +47,9 @@ int  statusBattPct   = 0;
 bool statusConnected = false;
 bool statusShowTime  = false;   // на экране часов мелкое время в углу не нужно
 
+uint8_t displayBacklight = 255;  // яркость подсветки из меню, ставит её settingsApply()
+bool    displayTestMark  = false; // тестовый режим d20 включён: на взводе 1d20 пометка TEST
+
 // Запускает экран и включает подсветку. Вызывать один раз в setup().
 // SPI поднимаем сами со своими ножками: если это сделает библиотека, она возьмёт
 // ножки по умолчанию, а у C3 среди них GPIO5, где у нас подсветка.
@@ -58,7 +61,13 @@ void displayBegin() {
   tft.setRotation(TFT_ROTATION);
   tft.setTextWrap(false);   // см. drawNumberIn: перенос строк прятал однозначные суммы
   tft.fillScreen(ST77XX_BLACK);
-  analogWrite(PIN_TFT_BLK, 255);   // подсветка на полную; яркость появится в настройках
+  analogWrite(PIN_TFT_BLK, displayBacklight);
+}
+
+// Яркость подсветки из меню, ШИМ от 0 до 255 (BRIGHT_LEVELS в config.h). Действует сразу.
+void displaySetBrightness(uint8_t pwm) {
+  displayBacklight = pwm;
+  analogWrite(PIN_TFT_BLK, pwm);
 }
 
 // Гасит экран: подсветку и саму матрицу (команда SLPIN, матрица почти не потребляет).
@@ -73,7 +82,7 @@ void displaySleep() {
 void displayWake() {
   tft.enableSleep(false);
   delay(10);
-  analogWrite(PIN_TFT_BLK, 255);
+  analogWrite(PIN_TFT_BLK, displayBacklight);
 }
 
 // Печатает строку по центру экрана по горизонтали, верх строки на высоте y.
@@ -213,6 +222,8 @@ void screenArmed(int count, int sides, uint8_t flags) {
   drawCentered(buf, 80, 6, ST77XX_YELLOW);
   if (flags == ROLL_FORTUNE)    drawCentered("FORTUNE", 140, 3, ST77XX_GREEN);
   if (flags == ROLL_MISFORTUNE) drawCentered("MISFORTUNE", 140, 3, ST77XX_RED);
+  // Тестовый режим подменяет 20 и 1: видно на каждом взводе, чтобы не забыть выключить перед игрой.
+  if (displayTestMark && count == 1 && sides == 20) drawCentered("TEST", 210, 2, ST77XX_ORANGE);
   drawCentered("HIT THE FLOOR", 180, 2, ST77XX_WHITE);
 }
 

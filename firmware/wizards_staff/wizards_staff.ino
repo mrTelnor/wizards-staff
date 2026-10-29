@@ -2,14 +2,14 @@
 // отвечает на info, time, arm, disarm и roll. Приложение взводит посох на нужную кость,
 // удар об пол бросает её и отдаёт бросок в Serial и на планшет.
 // Экран (задача 3 основного плана): в покое часы, взведённый посох показывает «3d6»,
-// после удара на экране результат, через RESULT_TIMEOUT_MS снова часы.
+// после удара на экране результат, через возврат к часам из меню снова часы.
 // Взводят кнопки костей на посохе (задача 4) и приложение; невзведённый посох удары не считает.
-// Взвод не спадает сам. Через SLEEP_TIMEOUT_MS без действий экран засыпает, будят его кость,
+// Взвод не спадает сам. Через время сна из меню экран засыпает, будят его кость,
 // удар по взведённому посоху и команды arm и roll с планшета.
 // Служебные кнопки: «Сброс» снимает взвод (долгое гасит экран), «Повтор» взводит прошлый бросок
 // (долгое — 1d20 с удачей или неудачей),
 // «Тихо» выключает звук, «Свет» переключает свечение кристалла и его палитру.
-// ◄ ► листают последние броски, «Отмена» выходит из истории. ОК (меню) пока только будит экран.
+// ◄ ► листают последние броски, «Отмена» выходит из истории. «ОК» открывает меню (menu.h).
 #include <LittleFS.h>
 #include "config.h"
 #include "log.h"
@@ -25,6 +25,8 @@
 #include "buttons.h"
 #include "sound.h"
 #include "lights.h"
+#include "settings.h"
+#include "menu.h"
 
 // Кость, которая подставляется, если в команде не сказано иное.
 // Тип не случаен. Оператор | у ArduinoJson смотрит на тип значения справа и отдаёт
@@ -42,12 +44,12 @@ unsigned long lastButtonAt  = 0;      // последнее нажатие кн�
 
 // Что сейчас на экране. Часы перерисовываются раз в минуту только в режиме покоя:
 // результат броска должен стоять, пока посох не взведут заново.
-enum ScreenMode { SCREEN_CLOCK, SCREEN_ARMED, SCREEN_RESULT, SCREEN_HISTORY };
+enum ScreenMode { SCREEN_CLOCK, SCREEN_ARMED, SCREEN_RESULT, SCREEN_HISTORY, SCREEN_MENU };
 ScreenMode    screenMode    = SCREEN_CLOCK;
 long          clockMinute   = -1;     // минута, которая сейчас нарисована на экране
 
 // Возвращает экран к часам. Нужна в трёх местах: при старте, при снятии взвода
-// с планшета и когда результат простоял RESULT_TIMEOUT_MS.
+// с планшета и когда результат простоял возврат к часам из меню.
 void showClock() {
   long epoch = rtcEpoch();
   clockMinute = epoch / 60;
@@ -55,7 +57,7 @@ void showClock() {
   screenMode = SCREEN_CLOCK;
 }
 
-// Сон экрана. Отсчёт SLEEP_TIMEOUT_MS идёт от последнего действия: нажатия кнопки,
+// Сон экрана. Отсчёт времени сна из меню идёт от последнего действия: нажатия кнопки,
 // взвода, броска. Спит только экран, плата работает: слушает кнопки, датчик и планшет.
 bool          screenAsleep   = false;
 unsigned long lastActivityAt = 0;
@@ -252,8 +254,8 @@ void onServiceEvent(const ServiceEvent& ev) {
     if (screenAsleep) {
       svcWokeScreen |= bit;
       wakeScreen();
-      // Во сне на экране могли быть только часы или взвод: результат к этому времени
-      // уже сменился часами (RESULT_TIMEOUT_MS короче SLEEP_TIMEOUT_MS).
+      // Во сне на экране могли быть только часы или взвод: результат, история и меню
+      // к этому времени уже вернулись к часам (меню не даёт сну быть короче возврата).
       showHomeScreen();
       logLine(LOG_BUTTONS, LOG_INFO, "служебная P%d (%s) разбудила экран", ev.button, name);
     } else {
@@ -268,10 +270,19 @@ void onServiceEvent(const ServiceEvent& ev) {
   logLine(LOG_BUTTONS, LOG_INFO, "служебная P%d (%s): %s", ev.button, name,
           isLong ? "долго" : "коротко");
 
+  // В меню кнопки меню работают по его правилам (menu.h), остальные — как обычно.
+  bool menuKey = ev.button == BTN_OK || ev.button == BTN_PREV
+              || ev.button == BTN_NEXT || ev.button == BTN_CANCEL;
+  if (screenMode == SCREEN_MENU && menuKey) {
+    if (!isLong && menuButton(ev.button)) showHomeScreen();
+    return;
+  }
+
   switch (ev.button) {
     case BTN_RESET:
       if (isLong)          sleepScreen("долгое «Сброс»");
       else if (screenMode == SCREEN_HISTORY) closeHistory();   // в истории «Сброс» только выходит, взвод не снимает
+      else if (screenMode == SCREEN_MENU) { menuLeave(); showHomeScreen(); }   // и в меню тоже, без сохранения
       else if (armedCount) disarmStaff("кнопкой «Сброс»");
       else                 showClock();   // взвода нет: просто убрать результат с экрана
       break;
@@ -298,6 +309,12 @@ void onServiceEvent(const ServiceEvent& ev) {
       break;
     case BTN_CANCEL:
       if (!isLong && screenMode == SCREEN_HISTORY) closeHistory();
+      break;
+    case BTN_OK:
+      if (!isLong) {
+        menuOpen();
+        screenMode = SCREEN_MENU;
+      }
       break;
   }
 }
@@ -327,12 +344,12 @@ void sendHistoryRecord(const HistoryRecord& r) {
   sendRollEvent(r.id, r.ts, r.count, r.sides, r.values, r.total, r.flags);
 }
 
-// Тестовый режим d20 (TEST_D20_CYCLE в config.h): подменяет итог броска 1d20 по кругу
+// Тестовый режим d20 (пункт TEST D20 в меню, по умолчанию TEST_D20_CYCLE): подменяет итог броска 1d20 по кругу
 // «случайный, 20, случайный, 1». Остальные броски не трогает.
 uint32_t testD20Rolls = 0;   // сколько бросков 1d20 было с включения
 
 void applyTestD20(Roll& r) {
-  if (!TEST_D20_CYCLE || r.count != 1 || r.sides != 20) return;
+  if (!settings.testD20 || r.count != 1 || r.sides != 20) return;
   int step = testD20Rolls++ % 4;
   if (step != 1 && step != 3) return;   // случайные броски не трогаем
   uint16_t forced = step == 1 ? 20 : 1;
@@ -482,7 +499,7 @@ void bleOnCommand(JsonDocument& cmd) {
     // и без них команда info выглядела бы как будто посох промолчал. Разложено по модулям,
     // чтобы каждая строка попала в тот же раздел журнала, что и её собратья при старте.
     logLine(LOG_BOOT, LOG_INFO, "прошивка %s, взвод не спадает, сон экрана через %lu с",
-            FW_VERSION, SLEEP_TIMEOUT_MS / 1000);
+            FW_VERSION, settingsSleepMs() / 1000);
     logLine(LOG_ID, LOG_INFO, "посох ID %u, MAC %s", staffId, bleMac().c_str());
     logLine(LOG_HISTORY, LOG_INFO, "%u из %u записей", historyCount, (unsigned)HISTORY_FLASH_SIZE);
 
@@ -537,6 +554,7 @@ void bleOnCommand(JsonDocument& cmd) {
       bleSendError("no rtc", "часы DS3231 не отвечают, время не записано");
       return;
     }
+    rtcSaveSynced(true);
     char buf[24];
     rtcFormat(rtcEpoch(), buf, sizeof(buf));
     logSetTime(rtcEpoch());
@@ -698,9 +716,10 @@ void setup() {
   rtcBegin();             // первым делом часы: с этого момента у журнала есть настоящее время
   logLine(LOG_BOOT, LOG_INFO, "посох мага, прошивка %s", FW_VERSION);
   reportResetReason();
-  if (TEST_D20_CYCLE) {
+  settingsLoad();         // до первого экрана и звука: яркость, громкость, тестовый режим
+  if (settings.testD20) {
     logLine(LOG_BOOT, LOG_WARN, "ТЕСТОВЫЙ РЕЖИМ d20: случайный, 20, случайный, 1 по кругу. "
-            "Перед игрой TEST_D20_CYCLE = false в config.h");
+            "Перед игрой выключить: меню, TEST D20");
   }
   reportFlash();
   historyBegin();
@@ -709,6 +728,7 @@ void setup() {
   soundLoad();            // до первого экрана и первого звука: значок «Тихо» и стартовый писк зависят от него
   batteryBegin();
   displayBegin();
+  settingsApply();        // яркость и громкость из меню; после displayBegin, он поднимает подсветку
   statusBattPct = batteryPercent();   // до первого экрана, чтобы значок не начинался с нуля
   showClock();
   strikeBegin();
@@ -782,23 +802,29 @@ void loop() {
     logLine(LOG_STRIKE, LOG_INFO, "удар не засчитан, пауза после броска");
   }
 
-  // Результат не вечный: через RESULT_TIMEOUT_MS без нового взвода экран
+  // Результат не вечный: через возврат к часам из меню без нового взвода экран
   // возвращается к часам. lastRollAt ставится после анимации, так что отсчёт идёт
   // от момента, когда сумма встала на экране. Время берём свежее, а не now: бросок
   // в этом же проходе цикла ставит lastRollAt позже now, и разность ушла бы через
   // ноль в огромное число — результат тут же сменился бы часами.
-  if (screenMode == SCREEN_RESULT && millis() - lastRollAt > RESULT_TIMEOUT_MS) {
+  if (screenMode == SCREEN_RESULT && millis() - lastRollAt > settingsClockMs()) {
     showClock();
   }
 
-  // История без нажатий SETTINGS_TIMEOUT_MS закрывается сама. Время свежее, как выше.
-  if (screenMode == SCREEN_HISTORY && millis() - historyViewAt > SETTINGS_TIMEOUT_MS) {
+  // История и меню без нажатий закрываются сами через тот же возврат к часам. Время свежее, как выше.
+  if (screenMode == SCREEN_HISTORY && millis() - historyViewAt > settingsClockMs()) {
     closeHistory();
   }
+  if (screenMode == SCREEN_MENU && millis() - menuAt > settingsClockMs()) {
+    menuLeave();
+    showHomeScreen();
+  }
+  // С меню ушли не через него (кость, удар, сон, «Сброс» во сне): несохранённая правка отменяется.
+  if (menuActive && screenMode != SCREEN_MENU) menuLeave();
 
-  // Сон: SLEEP_TIMEOUT_MS без действий в любом состоянии, и взведённый посох тоже засыпает.
+  // Сон: время сна из меню без действий в любом состоянии, и взведённый посох тоже засыпает.
   // Время свежее по той же причине, что выше: lastActivityAt могли поставить в этом проходе.
-  if (!screenAsleep && millis() - lastActivityAt > SLEEP_TIMEOUT_MS) {
+  if (!screenAsleep && millis() - lastActivityAt > settingsSleepMs()) {
     sleepScreen("долго без действий");
   }
 
