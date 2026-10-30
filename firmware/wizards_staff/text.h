@@ -22,6 +22,7 @@
 //
 // Что печатается вместо чего:
 //   ◄ и ►            — треугольники встроенного шрифта (коды 0x11 и 0x10);
+//   ▲ и ▼            — треугольники встроенного шрифта (коды 0x1E и 0x1F);
 //   — и –            — обычный дефис «-»;
 //   всё остальное, чего нет в шрифтах, и испорченные последовательности байт — «?».
 //
@@ -90,6 +91,8 @@ uint8_t textBuiltinCode(uint32_t code) {
   if (code >= 0x20 && code <= 0x7E) return (uint8_t)code;   // ASCII: буквы, цифры, знаки
   if (code == 0x25C4) return 0x11;                          // ◄
   if (code == 0x25BA) return 0x10;                          // ►
+  if (code == 0x25B2) return 0x1E;                          // ▲
+  if (code == 0x25BC) return 0x1F;                          // ▼
   if (code == 0x2014 || code == 0x2013) return '-';         // — и –
   return TEXT_UNKNOWN;
 }

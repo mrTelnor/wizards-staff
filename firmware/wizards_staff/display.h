@@ -99,6 +99,20 @@ void drawCentered(const char* text, int y, uint8_t size, uint16_t color) {
   drawTextCentered(tft, y, text, size, color, ST77XX_BLACK);
 }
 
+// Как drawCentered, но строка занимает всю ширину экрана: поля слева и справа от текста
+// (вместе с полосой 2·size над ним) закрашиваются чёрным. Для строк, которые на месте
+// меняют длину: заголовок истории «9/20» → «10/20», заголовок страницы инструкции.
+// Стирать всю полосу заранее нельзя — строка мигнёт; здесь каждая точка красится один раз.
+void drawCenteredLine(const char* text, int y, uint8_t size, uint16_t color) {
+  int w    = textWidth(text, size);
+  int x    = (TFT_SIZE - w) / 2;   // так же считает drawTextCentered
+  int top  = y - 2 * size;
+  int h    = 10 * size;
+  if (x > 0)            tft.fillRect(0, top, x, h, ST77XX_BLACK);
+  if (x + w < TFT_SIZE) tft.fillRect(x + w, top, TFT_SIZE - x - w, h, ST77XX_BLACK);
+  drawCentered(text, y, size, color);
+}
+
 // ===== Строка состояния =====
 
 // Значок батареи в правом верхнем углу: рамка и заливка по проценту заряда,
@@ -469,8 +483,7 @@ void drawHistoryRow(const HistoryRecord& rec, int y, bool selected) {
 void drawHistoryList(const HistoryRecord* recs, int count, int top, int sel) {
   char buf[48];   // русские буквы по два байта: запас вдвое
   snprintf(buf, sizeof(buf), "История %d/%d", sel + 1, count);
-  tft.fillRect(0, HIST_HEADER_Y - 4, TFT_SIZE, 20, ST77XX_BLACK);   // «12/20» длиннее «9/20»; с полосой над строкой
-  drawCentered(buf, HIST_HEADER_Y, 2, ST77XX_CYAN);
+  drawCenteredLine(buf, HIST_HEADER_Y, 2, ST77XX_CYAN);   // «12/20» длиннее «9/20»: поля стираются, без мигания
   int last = min(top + HISTORY_PAGE, count);
   for (int i = top; i < last; i++) {
     drawHistoryRow(recs[i], HIST_ROW_Y + (i - top) * HIST_ROW_H, i == sel);
