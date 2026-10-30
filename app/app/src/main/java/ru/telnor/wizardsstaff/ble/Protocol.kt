@@ -74,8 +74,10 @@ sealed interface StaffEvent {
      * sent — сколько записей в этой порции, last — номер последней (с ним просят
      * следующую), more — есть ли что просить. Приходит всегда, даже на пустую порцию:
      * иначе «всё отдано» не отличить от «ответ ещё не пришёл».
+     * error — посох не дочитал историю из своей флеш (с прошивки 0.22.0): more тогда false,
+     * но это не «всё отдано», а сбой, и догрузка неполная.
      */
-    data class HistEnd(val sent: Int, val last: Long, val more: Boolean) : StaffEvent
+    data class HistEnd(val sent: Int, val last: Long, val more: Boolean, val error: Boolean = false) : StaffEvent
 
     /** Строка из монитора посоха: срабатывания датчика, спавший взвод. */
     data class Log(val message: String) : StaffEvent
@@ -148,6 +150,7 @@ fun parseStaffEvent(line: String): StaffEvent? {
             sent = json.optInt("sent"),
             last = json.optLong("last"),
             more = json.optBoolean("more"),
+            error = json.optBoolean("err"),
         )
 
         "log" -> StaffEvent.Log(json.optString("msg"))

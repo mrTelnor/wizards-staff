@@ -375,7 +375,9 @@ class StaffViewModel(application: Application) : AndroidViewModel(application) {
             ble.send(StaffCommand.hist(event.last))
             return
         }
-        if (event.more) {
+        if (event.error) {
+            logNote("посох не смог дочитать историю из своей памяти: догрузка неполная, см. журнал посоха")
+        } else if (event.more) {
             logNote("посох говорит, что история не кончилась, но номер не сдвинулся: останавливаюсь")
         } else if (historyGot > 0) {
             logNote("догружено бросков с посоха: $historyGot")
