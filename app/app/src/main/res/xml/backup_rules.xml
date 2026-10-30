@@ -1,13 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?><!--
-   Sample backup rules file; uncomment and customize as necessary.
+   Правила резервного копирования для Android 11 и старше (на Android 12+ действуют
+   правила из data_extraction_rules.xml). Планшет на Android 10 берёт именно этот файл.
    See https://developer.android.com/guide/topics/data/autobackup
-   for details.
-   Note: This file is ignored for devices older than API 31
-   See https://developer.android.com/about/versions/12/backup-restore
 -->
 <full-backup-content>
     <!--
-   <include domain="sharedpref" path="."/>
-   <exclude domain="sharedpref" path="device.xml"/>
--->
+       PIN от посохов (PinStore, файл staff-pins.xml) в копию не кладём: копия уезжает
+       из личной папки приложения в облако и на другие устройства, а PIN должен оставаться
+       на этом планшете. После восстановления PIN один раз вводится заново.
+       Есть только exclude, без include: всё остальное (база бросков, персонажи)
+       копируется, как и раньше.
+    -->
+    <exclude domain="sharedpref" path="staff-pins.xml" />
 </full-backup-content>

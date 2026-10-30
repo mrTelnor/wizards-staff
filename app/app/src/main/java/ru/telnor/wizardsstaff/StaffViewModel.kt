@@ -292,7 +292,7 @@ class StaffViewModel(application: Application) : AndroidViewModel(application) {
         val address = connectedDevice.value?.address
         val pin = pendingPin ?: address?.let { pins.get(it) }
         if (pin != null) {
-            ble.send(StaffCommand.auth(pin))
+            ble.send(StaffCommand.auth(pin), StaffCommand.authForLog())
         } else {
             _auth.value = AuthState.NeedPin(lastPinWrong, lastPinWait)
             if (!pinPromptDismissed) _pinPrompt.value = true
@@ -394,7 +394,9 @@ class StaffViewModel(application: Application) : AndroidViewModel(application) {
         pinPromptDismissed = false
         // Если связи сейчас нет, посылать некуда: посох сам переподключится через
         // считаные секунды, и набранный PIN уйдёт в ответ на его сведения.
-        if (connection.value == Connection.Connected) ble.send(StaffCommand.auth(pin))
+        if (connection.value == Connection.Connected) {
+            ble.send(StaffCommand.auth(pin), StaffCommand.authForLog())
+        }
     }
 
     /** Окно ввода закрыли, не назвав PIN. Само оно больше не откроется. */
@@ -413,7 +415,7 @@ class StaffViewModel(application: Application) : AndroidViewModel(application) {
     fun changePin(oldPin: String, newPin: String) {
         pendingNewPin = newPin
         _pinChangeResult.value = null
-        ble.send(StaffCommand.changePin(oldPin, newPin))
+        ble.send(StaffCommand.changePin(oldPin, newPin), StaffCommand.changePinForLog())
     }
 
     /** Убрать показанный итог смены PIN. */

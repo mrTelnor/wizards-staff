@@ -1,19 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?><!--
-   Sample data extraction rules file; uncomment and customize as necessary.
+   Правила резервного копирования и переноса на другое устройство для Android 12 и новее.
+   Для старых версий те же правила продублированы в backup_rules.xml.
    See https://developer.android.com/about/versions/12/backup-restore#xml-changes
-   for details.
 -->
 <data-extraction-rules>
-    <cloud-backup>
-        <!-- TODO: Use <include> and <exclude> to control what is backed up.
-        <include .../>
-        <exclude .../>
-        -->
-    </cloud-backup>
     <!--
-    <device-transfer>
-        <include .../>
-        <exclude .../>
-    </device-transfer>
+       PIN от посохов (PinStore, файл staff-pins.xml) не уезжает ни в облачную копию,
+       ни на новое устройство при переносе: PIN должен оставаться на этом планшете,
+       на новом его один раз вводят заново. Есть только exclude, без include:
+       всё остальное (база бросков, персонажи) копируется, как и раньше.
     -->
+    <cloud-backup>
+        <exclude domain="sharedpref" path="staff-pins.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="staff-pins.xml" />
+    </device-transfer>
 </data-extraction-rules>

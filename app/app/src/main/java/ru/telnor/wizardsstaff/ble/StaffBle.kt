@@ -96,13 +96,18 @@ class StaffBle(context: Context) {
     private val _log = MutableSharedFlow<LogLine>(extraBufferCapacity = 256)
     val log: SharedFlow<LogLine> = _log.asSharedFlow()
 
+    // Свои команды с PIN приходят сюда уже со звёздочками (см. send). maskSecrets на входе
+    // в журнал — для всего остального, прежде всего для команд, набранных руками на экране логов.
     private fun writeLog(direction: LogDirection, text: String) {
-        _log.tryEmit(LogLine(System.currentTimeMillis(), direction, text))
+        // Исходящим строкам — маскировка с запасным ремнём, остальным — точная: в ответах
+        // посоха слово PIN бывает в обычном тексте, и ремень зря стёр бы в них цифры.
+        val shown = if (direction == LogDirection.Out) maskOutgoing(text) else maskSecrets(text)
+        _log.tryEmit(LogLine(System.currentTimeMillis(), direction, shown))
     }
 
     private var gatt: BluetoothGatt? = null
     private var rxCharacteristic: BluetoothGattCharacteristic? = null
-    private var incoming = StringBuilder()
+    private val incoming = LineAssembler()
     private var wantConnection = false   // true, пока пользователь не нажал «Отключить»
 
     // Android выполняет одну операцию GATT за раз: если начать вторую, не дождавшись ответа
@@ -197,7 +202,7 @@ class StaffBle(context: Context) {
         }
         gatt = null
         rxCharacteristic = null
-        incoming = StringBuilder()
+        incoming.reset()
         clearQueue()
         _connection.value = Connection.Disconnected
         _connectedDevice.value = null
@@ -216,7 +221,7 @@ class StaffBle(context: Context) {
 
                 BluetoothGatt.STATE_DISCONNECTED -> {
                     rxCharacteristic = null
-                    incoming = StringBuilder()
+                    incoming.reset()
                     clearQueue()
                     if (wantConnection) {
                         // Посох выключили или унесли. Просим систему подключиться, когда он вернётся.
@@ -354,34 +359,39 @@ class StaffBle(context: Context) {
 
     // ---------- обмен строками ----------
 
-    /** Складывает пришедшие куски и разбирает каждую законченную строку. */
+    /**
+     * Складывает пришедшие куски и разбирает каждую законченную строку. Куски копятся
+     * байтами, а не текстом: иначе разрезанная пакетом русская буква портится, см. LineAssembler.
+     */
     private fun receive(chunk: ByteArray) {
-        incoming.append(String(chunk, Charsets.UTF_8))
-        while (true) {
-            val end = incoming.indexOf("\n")
-            if (end < 0) break
-            val line = incoming.substring(0, end).trim()
-            incoming.delete(0, end + 1)
-            if (line.isEmpty()) continue
+        val assembled = incoming.feed(chunk)
+        repeat(assembled.dropped) {
+            val note = "строка с посоха длиннее $MAX_LINE_BYTES байт без перевода строки, выброшена"
+            Log.w(TAG, note)
+            writeLog(LogDirection.System, note)
+        }
+        for (line in assembled.lines) {
             writeLog(LogDirection.In, line)
             val event = parseStaffEvent(line)
             if (event == null) {
-                Log.w(TAG, "непонятная строка с посоха: $line")
+                Log.w(TAG, "непонятная строка с посоха: ${maskSecrets(line)}")
             } else {
                 _events.tryEmit(event)
             }
         }
-        // Защита от мусора: если перевода строки долго нет, буфер не должен расти бесконечно.
-        if (incoming.length > 4096) incoming = StringBuilder()
     }
 
-    /** Отправляет команду посоху. Команды уходят по очереди, одна за другой. */
+    /**
+     * Отправляет команду посоху. Команды уходят по очереди, одна за другой.
+     * logText — что записать в журнал вместо самой строки: команды с PIN передают
+     * сюда готовый текст со звёздочками (StaffCommand.authForLog и changePinForLog).
+     */
     @SuppressLint("MissingPermission")
-    fun send(line: String) {
+    fun send(line: String, logText: String = line) {
         val characteristic = rxCharacteristic ?: return
         val g = gatt ?: return
         val bytes = (line + "\n").toByteArray(Charsets.UTF_8)
-        writeLog(LogDirection.Out, line)
+        writeLog(LogDirection.Out, logText)
         enqueue {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 g.writeCharacteristic(

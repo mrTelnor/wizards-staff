@@ -187,4 +187,13 @@ object StaffCommand {
     /** Смена PIN. Старый обязателен, даже когда вход уже открыт. */
     fun changePin(oldPin: String, newPin: String): String =
         """{"cmd":"pin","old":"$oldPin","new":"$newPin"}"""
+
+    /**
+     * То, что пишется в журнал вместо auth. Строится сразу со звёздочками, без поиска
+     * и замены: для своих команд маскировка гарантирована, как бы ни была устроена строка.
+     */
+    fun authForLog(): String = auth(MASKED_SECRET)
+
+    /** То, что пишется в журнал вместо смены PIN: оба PIN звёздочками. */
+    fun changePinForLog(): String = changePin(MASKED_SECRET, MASKED_SECRET)
 }

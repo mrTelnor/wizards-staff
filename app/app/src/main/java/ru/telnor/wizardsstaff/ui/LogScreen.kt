@@ -108,7 +108,9 @@ fun LogScreen(
     }
 
     var query by rememberSaveable { mutableStateOf("") }
-    var command by rememberSaveable { mutableStateOf("") }
+    // Набранная команда — remember, а не rememberSaveable: в ней может быть PIN, а сохранённое
+    // состояние экрана система может сохранить на диск. Цена — после поворота планшета поле пустое.
+    var command by remember { mutableStateOf("") }
     var autoScroll by rememberSaveable { mutableStateOf(true) }
     // По умолчанию «Инфо»: читать журнал приходят за строками посоха, а не за машинным
     // JSON. Он никуда не девается, кнопка «Всё» рядом.
