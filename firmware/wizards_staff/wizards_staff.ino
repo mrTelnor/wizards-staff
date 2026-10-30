@@ -14,6 +14,7 @@
 #include "config.h"
 #include "log.h"
 #include "identity.h"
+#include "flashfs.h"
 #include "history.h"
 #include "battery.h"
 #include "dice.h"
@@ -220,7 +221,10 @@ uint8_t svcWokeScreen = 0;
 void repeatLastRoll() {
   HistoryRecord last;
   if (!historyLast(last)) {
-    logLine(LOG_BUTTONS, LOG_INFO, "повторять нечего: бросков ещё не было");
+    // Без флеш-истории «Повтор» помнит только броски этого включения: так и говорим,
+    // а не «бросков не было», которое было бы неправдой.
+    if (historyReady) logLine(LOG_BUTTONS, LOG_INFO, "повторять нечего: бросков ещё не было");
+    else logLine(LOG_BUTTONS, LOG_WARN, "повторять нечего: флеш-история выключена, бросков ещё не было");
     return;
   }
   armStaff(last.count, last.sides);   // режим удачи не повторяется: он сбрасывается после броска
@@ -369,7 +373,9 @@ void doRoll(uint8_t count, uint16_t sides, uint8_t flags = 0) {
   applyTestD20(r);
   uint32_t id = historyNextId();        // номер сквозной, во флеш, не начинается заново
   uint32_t ts = rtcEpoch();             // ноль, если часов нет: планшет подставит своё время
-  if (!historyPush(r, id, ts)) logLine(LOG_HISTORY, LOG_ERROR, "бросок не записан во флеш");
+  if (!historyPush(r, id, ts)) {
+    logLine(LOG_HISTORY, LOG_ERROR, "бросок #%u не записан во флеш: %s", id, historyProblemText());
+  }
 
   char buf[80];
   rollBreakdown(r, buf, sizeof(buf));
@@ -489,6 +495,7 @@ void bleOnCommand(JsonDocument& cmd) {
     doc["pinset"]  = authIsSet();          // задан ли на посохе PIN
     doc["authed"]  = authed;               // открыт ли вход в этом сеансе связи
     doc["hist"]    = HISTORY_FLASH_SIZE;   // ёмкость истории во флеш, а не экранной
+    doc["histok"]  = historyAvailable();   // пишется ли история во флеш; false — см. журнал (с 0.22.0)
     doc["arm"]     = 0;   // через сколько секунд спадает взвод; 0 — не спадает (с 2026-10-28)
     doc["ts"]      = rtcEpoch();  // время посоха: приложение покажет его рядом со своим
     JsonArray dice = doc["dice"].to<JsonArray>();
@@ -501,7 +508,13 @@ void bleOnCommand(JsonDocument& cmd) {
     logLine(LOG_BOOT, LOG_INFO, "прошивка %s, взвод не спадает, сон экрана через %lu с",
             FW_VERSION, settingsSleepMs() / 1000);
     logLine(LOG_ID, LOG_INFO, "посох ID %u, MAC %s", staffId, bleMac().c_str());
-    logLine(LOG_HISTORY, LOG_INFO, "%u из %u записей", historyCount, (unsigned)HISTORY_FLASH_SIZE);
+    if (!historyReady) {
+      logLine(LOG_HISTORY, LOG_ERROR, "история во флеш выключена: %s", historyProblemText());
+    } else {
+      if (historyProblem) logLine(LOG_HISTORY, LOG_WARN, "история во флеш: %s", historyProblemText());
+      logLine(LOG_HISTORY, historyBadCount ? LOG_WARN : LOG_INFO, "%u из %u записей, битых при старте %u",
+              historyCount, (unsigned)HISTORY_FLASH_SIZE, historyBadCount);
+    }
 
     uint32_t epoch = rtcEpoch();
     if (epoch) {
@@ -595,9 +608,39 @@ void bleOnCommand(JsonDocument& cmd) {
     doc["sent"] = page.sent;
     doc["last"] = page.lastId;   // с этим номером приложение просит следующую порцию
     doc["more"] = page.more;
+    if (page.err) doc["err"] = true;   // выдача оборвалась на сбое чтения, а не кончилась (с 0.22.0)
     bleSend(doc);
     logLine(LOG_HISTORY, LOG_INFO, "отдано %u записей после #%u, ещё есть: %s",
             page.sent, after, page.more ? "да" : "нет");
+    return;
+  }
+
+  if (strcmp(name, "fsformat") == 0) {
+    // Осознанное форматирование раздела под файлы (flashfs.h, fsFormatConfirmed): когда он
+    // не смонтировался или когда файл истории непригоден. Стирает раздел целиком, поэтому
+    // нужно слово-подтверждение, а работающую историю так не стереть вовсе. Перед этим
+    // выгрузить историю на планшет. Номера бросков идут дальше: они живут ещё и в NVS.
+    const char* confirm = cmd["confirm"] | "";
+    if (strcmp(confirm, FS_FORMAT_CONFIRM) != 0) {
+      char why[BLE_ERROR_TEXT];
+      snprintf(why, sizeof(why), "стирает раздел и историю на посохе целиком: пришли confirm \"%s\"",
+               FS_FORMAT_CONFIRM);
+      bleSendError("confirm needed", why);
+      return;
+    }
+    const char* refused = fsFormatConfirmed(!historyReady && historyFileUnusable);
+    // Раздел мог смонтироваться сам перед форматированием: тогда отказ, но история
+    // уже доступна, и её надо поднять, не дожидаясь перезапуска.
+    if (fsMounted && !historyReady) historyBegin();
+    if (refused) { bleSendError("format refused", refused); return; }
+    if (!historyReady) {
+      bleSendError("history down", "раздел отформатирован, но история не поднялась: см. журнал");
+      return;
+    }
+    JsonDocument doc;
+    doc["ev"]  = "ok";
+    doc["cmd"] = "fsformat";
+    bleSend(doc);
     return;
   }
 
@@ -667,26 +710,6 @@ void bleOnCommand(JsonDocument& cmd) {
   bleSendError("unknown cmd", why);
 }
 
-// Готовит раздел под файлы (LittleFS) и печатает его размер. Размер нужен, чтобы выбрать
-// ёмкость истории бросков в задаче B2: в плане стоит 2000 записей по 24 байта, около 48 КБ.
-// Если раздел не монтируется, форматируем: после смены схемы разделов файловой системы там
-// нет вовсе, и терять нечего. Замер 2026-09-18 показал именно этот случай.
-void reportFlash() {
-  if (!LittleFS.begin(false)) {
-    logLine(LOG_FS, LOG_INFO, "раздел не смонтирован, форматирую (читаемых данных там нет)");
-    if (!LittleFS.format() || !LittleFS.begin(false)) {
-      logLine(LOG_FS, LOG_ERROR, "раздел не поднялся даже после форматирования, "
-              "проверь Tools -> Partition Scheme: нужен Minimal SPIFFS с разделом под файлы");
-      return;
-    }
-    logLine(LOG_FS, LOG_INFO, "отформатирован успешно");
-  }
-  logLine(LOG_FS, LOG_INFO, "%u КБ всего, %u КБ занято, %u КБ свободно",
-          (unsigned)(LittleFS.totalBytes() / 1024),
-          (unsigned)(LittleFS.usedBytes() / 1024),
-          (unsigned)((LittleFS.totalBytes() - LittleFS.usedBytes()) / 1024));
-}
-
 // Пишет в журнал, почему плата перезапустилась. Нужна, чтобы отличить обычное включение
 // от просадки питания: при просадке (brownout) плата молча перезапускается, и снаружи
 // это выглядит как долгий старт или зависание.
@@ -740,7 +763,7 @@ void setup() {
     logLine(LOG_BOOT, LOG_WARN, "ТЕСТОВЫЙ РЕЖИМ d20: случайный, 20, случайный, 1 по кругу. "
             "Перед игрой выключить: меню, Тест d20");
   }
-  reportFlash();
+  fsBegin();              // раздел под файлы: без молчаливого форматирования, см. flashfs.h
   historyBegin();
   diceLoad();
   authBegin();
