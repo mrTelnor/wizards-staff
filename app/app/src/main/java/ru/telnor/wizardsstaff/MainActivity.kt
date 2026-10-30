@@ -184,7 +184,12 @@ private fun AppFrame(
                     ConnectionBadge(
                         connected = connection == Connection.Connected,
                         percent = battery,
-                        onClick = { section = Section.Staff },
+                        // Как пункты рейки: ведёт на сам экран «Посох», закрывая логи и инструкцию.
+                        onClick = {
+                            section = Section.Staff
+                            showLogs = false
+                            showHelp = false
+                        },
                     )
                 },
                 modifier = Modifier.width(PosohDimens.navigationRailWidth),
@@ -230,8 +235,9 @@ private fun AppFrame(
                 )
                 HorizontalDivider(color = scheme.outlineVariant)
 
-                // Системная «Назад» закрывает инструкцию, а не всё приложение.
+                // Системная «Назад» закрывает инструкцию или логи, а не всё приложение.
                 BackHandler(enabled = showHelp) { showHelp = false }
+                BackHandler(enabled = showLogs) { showLogs = false }
 
                 when {
                     showHelp -> HelpScreen(onBack = { showHelp = false })
