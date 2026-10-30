@@ -386,35 +386,36 @@ private fun ConnectedCard(
                     },
                 )
                 StaffFact("ПРОШИВКА", firmware ?: "—")
-                Spacer(Modifier.weight(1f))
+            }
 
-                // Кнопки своим рядом с маленьким зазором: в общем ряду между ними вставал
-                // большой отступ фактов, и надпись «Логи» не помещалась, обрезаясь до «Л».
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(PosohDimens.spaceS),
-                    verticalAlignment = Alignment.Bottom,
+            // Кнопки отдельной строкой под фактами, прижаты вправо: в одной строке с фактами
+            // они перестали помещаться, а надпись «Логи» обрезалась до «Л».
+            Spacer(Modifier.height(PosohDimens.spaceL))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(PosohDimens.spaceS, Alignment.End),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                OutlinedButton(
+                    onClick = if (authOpen) onChangePin else onEnterPin,
+                    shape = RoundedCornerShape(22.dp),
+                    modifier = Modifier.height(44.dp),
+                    // Поля уже стандартных: кнопке нужно только уместить своё слово.
+                    contentPadding = PaddingValues(horizontal = PosohDimens.spaceM),
                 ) {
-                    OutlinedButton(
-                        onClick = if (authOpen) onChangePin else onEnterPin,
-                        shape = RoundedCornerShape(22.dp),
-                        modifier = Modifier.height(44.dp),
-                        // Поля уже стандартных: кнопке нужно только уместить своё слово.
-                        contentPadding = PaddingValues(horizontal = PosohDimens.spaceM),
-                    ) {
-                        // Смысл кнопки следует за состоянием: пока посох закрыт, менять
-                        // PIN всё равно нельзя - он откажет, - а вот ввести его нужно.
-                        Text(if (authOpen) "PIN" else "Ввести PIN")
-                    }
-                    OutlinedButton(
-                        onClick = onOpenLogs,
-                        shape = RoundedCornerShape(22.dp),
-                        modifier = Modifier.height(44.dp),
-                        contentPadding = PaddingValues(horizontal = PosohDimens.spaceM),
-                    ) {
-                        Icon(StaffIcons.Logs, contentDescription = null, Modifier.size(18.dp))
-                        Spacer(Modifier.width(PosohDimens.spaceS))
-                        Text("Логи")
-                    }
+                    // Смысл кнопки следует за состоянием: пока посох закрыт, менять
+                    // PIN всё равно нельзя - он откажет, - а вот ввести его нужно.
+                    Text(if (authOpen) "PIN" else "Ввести PIN")
+                }
+                OutlinedButton(
+                    onClick = onOpenLogs,
+                    shape = RoundedCornerShape(22.dp),
+                    modifier = Modifier.height(44.dp),
+                    contentPadding = PaddingValues(horizontal = PosohDimens.spaceM),
+                ) {
+                    Icon(StaffIcons.Logs, contentDescription = null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(PosohDimens.spaceS))
+                    Text("Логи")
                 }
             }
 
