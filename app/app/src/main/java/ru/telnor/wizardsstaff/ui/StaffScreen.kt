@@ -66,6 +66,7 @@ fun StaffScreen(
     onDisconnect: () -> Unit,
     onSyncTime: () -> Unit,
     onOpenLogs: () -> Unit,
+    onOpenHelp: () -> Unit,
     onChangePin: () -> Unit,
     onEnterPin: () -> Unit,
     authOpen: Boolean,
@@ -99,6 +100,7 @@ fun StaffScreen(
                     onDisconnect = onDisconnect,
                     onSyncTime = onSyncTime,
                     onOpenLogs = onOpenLogs,
+                    onOpenHelp = onOpenHelp,
                     onChangePin = onChangePin,
                     onEnterPin = onEnterPin,
                 )
@@ -326,6 +328,7 @@ private fun ConnectedCard(
     onDisconnect: () -> Unit,
     onSyncTime: () -> Unit,
     onOpenLogs: () -> Unit,
+    onOpenHelp: () -> Unit,
     onChangePin: () -> Unit,
     onEnterPin: () -> Unit,
 ) {
@@ -416,6 +419,16 @@ private fun ConnectedCard(
                     Icon(StaffIcons.Logs, contentDescription = null, Modifier.size(18.dp))
                     Spacer(Modifier.width(PosohDimens.spaceS))
                     Text("Логи")
+                }
+                OutlinedButton(
+                    onClick = onOpenHelp,
+                    shape = RoundedCornerShape(22.dp),
+                    modifier = Modifier.height(44.dp),
+                    contentPadding = PaddingValues(horizontal = PosohDimens.spaceM),
+                ) {
+                    Icon(StaffIcons.Help, contentDescription = null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(PosohDimens.spaceS))
+                    Text("Инструкция")
                 }
             }
 

@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -58,6 +59,7 @@ import ru.telnor.wizardsstaff.db.CharacterSheet
 import ru.telnor.wizardsstaff.ui.ChangePinDialog
 import ru.telnor.wizardsstaff.ui.CharacterAvatar
 import ru.telnor.wizardsstaff.ui.CharacterScreen
+import ru.telnor.wizardsstaff.ui.HelpScreen
 import ru.telnor.wizardsstaff.ui.LogScreen
 import ru.telnor.wizardsstaff.ui.PermissionDialog
 import ru.telnor.wizardsstaff.ui.PinPromptDialog
@@ -120,6 +122,7 @@ private fun AppFrame(
     // а та переживает пересоздание.
     var section by rememberSaveable { mutableStateOf(Section.Rolls) }
     var showLogs by rememberSaveable { mutableStateOf(false) }
+    var showHelp by rememberSaveable { mutableStateOf(false) }
     var showPermissionDialog by rememberSaveable { mutableStateOf(false) }
     var showBluetoothOffDialog by rememberSaveable { mutableStateOf(false) }
     var showChangePinDialog by rememberSaveable { mutableStateOf(false) }
@@ -193,6 +196,7 @@ private fun AppFrame(
                         onClick = {
                             section = item
                             showLogs = false
+                            showHelp = false
                         },
                         icon = {
                             Icon(item.icon, contentDescription = item.title, Modifier.size(22.dp))
@@ -213,6 +217,7 @@ private fun AppFrame(
                 TopBar(
                     section = section,
                     logsOpen = showLogs,
+                    helpOpen = showHelp,
                     rollCount = rolls.size,
                     connection = connection,
                     armedFormula = armed?.formula,
@@ -225,7 +230,12 @@ private fun AppFrame(
                 )
                 HorizontalDivider(color = scheme.outlineVariant)
 
+                // Системная «Назад» закрывает инструкцию, а не всё приложение.
+                BackHandler(enabled = showHelp) { showHelp = false }
+
                 when {
+                    showHelp -> HelpScreen(onBack = { showHelp = false })
+
                     showLogs -> LogScreen(
                         lines = logLines,
                         connected = connection == Connection.Connected,
@@ -263,6 +273,7 @@ private fun AppFrame(
                         onDisconnect = viewModel::disconnect,
                         onSyncTime = viewModel::syncTime,
                         onOpenLogs = { showLogs = true },
+                        onOpenHelp = { showHelp = true },
                         onChangePin = { showChangePinDialog = true },
                         onEnterPin = viewModel::showPinPrompt,
                         authOpen = authState is AuthState.Open || authState is AuthState.NotNeeded,
@@ -391,6 +402,7 @@ private fun ConnectionBadge(connected: Boolean, percent: Int?, onClick: () -> Un
 private fun TopBar(
     section: Section,
     logsOpen: Boolean,
+    helpOpen: Boolean,
     rollCount: Int,
     connection: Connection,
     armedFormula: String?,
@@ -411,13 +423,17 @@ private fun TopBar(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = if (logsOpen) "Логи посоха" else section.title,
+            text = when {
+                helpOpen -> "Инструкция"
+                logsOpen -> "Логи посоха"
+                else -> section.title
+            },
             style = MaterialTheme.typography.headlineSmall,
         )
         Spacer(Modifier.width(PosohDimens.spaceM))
         // У раздела «Персонажи» вместо подписи стоит переключатель: подпись «листы
         // и действия» ничего не добавляла бы рядом с именем открытого персонажа.
-        if (!logsOpen && section == Section.Characters && character != null) {
+        if (!logsOpen && !helpOpen && section == Section.Characters && character != null) {
             CharacterChip(
                 character = character,
                 characters = characters,
@@ -431,7 +447,9 @@ private fun TopBar(
             )
         } else {
             Text(
-                text = if (logsOpen) {
+                text = if (helpOpen) {
+                    "как пользоваться посохом"
+                } else if (logsOpen) {
                     "обмен по Bluetooth"
                 } else if (section == Section.Rolls && rollCount > 0) {
                     "сегодня · $rollCount " + plural(rollCount, "бросок", "броска", "бросков")

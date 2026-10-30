@@ -131,4 +131,11 @@ object StaffIcons {
     )
 
     val Logs: ImageVector = strokeIcon("M5 6h14", "M5 10h14", "M5 14h9", "M5 18h11")
+
+    /** Инструкция к посоху: вопрос в круге, в одну толщину с Info. */
+    val Help: ImageVector = strokeIcon(
+        circle(12f, 12f, 8.5f),
+        "M9.6 9.6a2.5 2.5 0 0 1 4.8 1c0 1.8-2.4 2-2.4 3.6",
+        "M12 17.2v.4",
+    )
 }

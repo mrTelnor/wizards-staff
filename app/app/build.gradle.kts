@@ -45,6 +45,15 @@ android {
     }
 }
 
+// HelpContentTest читает списки кнопок и меню из прошивки (config.h, menu.h). Gradle об этом
+// не знает и без явного входа считает тесты свежими: поменял прошивку — тест не перезапустится
+// и не поймает, что инструкция в приложении отстала. Папку прошивки объявляем входом тестов.
+tasks.withType<Test>().configureEach {
+    inputs.dir(rootProject.file("../firmware/wizards_staff"))
+        .withPropertyName("firmware")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+}
+
 dependencies {
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
